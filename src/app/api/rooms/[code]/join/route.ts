@@ -6,10 +6,20 @@ import { getUserLibrarySample } from "@/lib/spotify";
 export const runtime = "nodejs";
 
 export async function POST(_req: Request, { params }: { params: Promise<{ code: string }> }) {
-  const session = await requireSpotifySession();
-  if (!session) {
-    return NextResponse.json({ error: "Sign in with Spotify first" }, { status: 401 });
+  const result = await requireSpotifySession();
+  if (!result.ok) {
+    return NextResponse.json(
+      {
+        error:
+          result.reason === "session-expired"
+            ? "Your Spotify session expired. Sign in again."
+            : "Sign in with Spotify first.",
+        reason: result.reason,
+      },
+      { status: 401 },
+    );
   }
+  const session = result.session;
   const { code } = await params;
 
   let library;

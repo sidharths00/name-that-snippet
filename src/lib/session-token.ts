@@ -8,15 +8,25 @@ export interface SessionWithToken {
   accessToken: string;
 }
 
-export async function requireSpotifySession(): Promise<SessionWithToken | null> {
+export type SessionFailureReason = "not-signed-in" | "session-expired";
+
+export async function requireSpotifySession(): Promise<
+  | { ok: true; session: SessionWithToken }
+  | { ok: false; reason: SessionFailureReason }
+> {
   const session = await auth();
-  if (!session?.user?.id || !session.accessToken) return null;
-  if (session.error === "RefreshAccessTokenError") return null;
+  if (!session?.user?.id) return { ok: false, reason: "not-signed-in" };
+  if (session.error === "RefreshAccessTokenError" || !session.accessToken) {
+    return { ok: false, reason: "session-expired" };
+  }
   return {
-    userId: session.user.id,
-    name: session.user.name ?? "Player",
-    image: session.user.image ?? null,
-    isPremium: session.user.product === "premium",
-    accessToken: session.accessToken,
+    ok: true,
+    session: {
+      userId: session.user.id,
+      name: session.user.name ?? "Player",
+      image: session.user.image ?? null,
+      isPremium: session.user.product === "premium",
+      accessToken: session.accessToken,
+    },
   };
 }

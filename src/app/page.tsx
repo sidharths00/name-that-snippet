@@ -8,7 +8,11 @@ import { SoloButton } from "./_components/SoloButton";
 
 export default async function HomePage() {
   const session = await auth();
-  const signedIn = !!session?.user;
+  // Treat a session with broken refresh-token as signed-out so the user is
+  // prompted to re-auth instead of hitting confusing "Sign in first" errors
+  // on every API call.
+  const signedIn = !!session?.user && session.error !== "RefreshAccessTokenError";
+  const expired = !!session?.user && session.error === "RefreshAccessTokenError";
 
   return (
     <main className="relative flex min-h-screen flex-col">
@@ -55,6 +59,11 @@ export default async function HomePage() {
 
         {!signedIn ? (
           <div className="flex flex-col items-center gap-3">
+            {expired && (
+              <p className="rounded-xl border border-warn/30 bg-warn/10 px-4 py-2 text-center text-xs text-warn">
+                Your Spotify session expired. Sign in again to continue.
+              </p>
+            )}
             <SignInButton callbackUrl="/" />
             <p className="max-w-md text-center text-xs text-fg-muted">
               Spotify Premium recommended for in-app playback. Free accounts can still

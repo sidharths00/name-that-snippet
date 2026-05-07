@@ -16,10 +16,20 @@ const Body = z.object({
 });
 
 export async function POST(req: Request) {
-  const session = await requireSpotifySession();
-  if (!session) {
-    return NextResponse.json({ error: "Sign in with Spotify first" }, { status: 401 });
+  const result = await requireSpotifySession();
+  if (!result.ok) {
+    return NextResponse.json(
+      {
+        error:
+          result.reason === "session-expired"
+            ? "Your Spotify session expired. Sign in again."
+            : "Sign in with Spotify first.",
+        reason: result.reason,
+      },
+      { status: 401 },
+    );
   }
+  const session = result.session;
   const body = Body.safeParse(await req.json().catch(() => ({})));
   if (!body.success) {
     return NextResponse.json({ error: "Invalid settings" }, { status: 400 });

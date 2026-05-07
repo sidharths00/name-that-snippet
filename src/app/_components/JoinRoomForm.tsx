@@ -7,6 +7,7 @@ export function JoinRoomForm() {
   const router = useRouter();
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [needsReauth, setNeedsReauth] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   async function onSubmit(e: FormEvent) {
@@ -18,10 +19,22 @@ export function JoinRoomForm() {
     }
     setSubmitting(true);
     setError(null);
+    setNeedsReauth(false);
     try {
       const res = await fetch(`/api/rooms/${cleaned}/join`, { method: "POST" });
       if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        const data = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          reason?: string;
+        };
+        if (res.status === 401 && data.reason === "session-expired") {
+          setNeedsReauth(true);
+          // Force a fresh sign-in. After OAuth the user comes back to this
+          // page; they can re-enter the code and try again.
+          await fetch("/api/auth/signout", { method: "POST" });
+          window.location.href = `/api/auth/signin/spotify?callbackUrl=${encodeURIComponent("/")}`;
+          return;
+        }
         throw new Error(data.error ?? "Couldn't join that room");
       }
       router.push(`/room/${cleaned}`);
@@ -55,6 +68,9 @@ export function JoinRoomForm() {
         </button>
       </div>
       {error && <p className="text-xs text-danger">{error}</p>}
+      {needsReauth && (
+        <p className="text-xs text-fg-muted">Redirecting you to sign in again…</p>
+      )}
     </form>
   );
 }

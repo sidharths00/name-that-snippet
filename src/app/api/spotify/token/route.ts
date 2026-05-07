@@ -9,9 +9,12 @@ export const dynamic = "force-dynamic";
 // only usable for the user themself, so exposing this to the user's own
 // browser is fine.
 export async function GET() {
-  const session = await requireSpotifySession();
-  if (!session) {
-    return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+  const result = await requireSpotifySession();
+  if (!result.ok) {
+    return NextResponse.json(
+      { error: "Not signed in", reason: result.reason },
+      { status: 401 },
+    );
   }
-  return NextResponse.json({ accessToken: session.accessToken });
+  return NextResponse.json({ accessToken: result.session.accessToken });
 }
