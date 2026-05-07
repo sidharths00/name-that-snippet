@@ -74,13 +74,11 @@ export function GameView({
             <Reveal track={track} round={round} room={room} />
           )}
 
-          {room.settings.gameMode === "race" && inRound && (
-            <GuessInput room={room} viewer={viewer} round={round} />
-          )}
+          {(room.settings.gameMode === "race" || room.settings.gameMode === "speed") &&
+            inRound && <GuessInput room={room} viewer={viewer} round={round} />}
 
-          {room.settings.gameMode === "race" && inRound && isHost && (
-            <SkipRoundButton code={room.code} />
-          )}
+          {(room.settings.gameMode === "race" || room.settings.gameMode === "speed") &&
+            inRound && isHost && <SkipRoundButton code={room.code} mode={room.settings.gameMode} />}
 
           {room.settings.gameMode === "turns" && inRound && (
             <TurnView
@@ -111,7 +109,11 @@ function RoundHeader({ room }: { room: PublicRoom }) {
           Round {idx} / {room.settings.rounds}
         </p>
         <h2 className="text-2xl font-black sm:text-3xl">
-          {room.settings.gameMode === "race" ? "Race to name it" : "Whose turn?"}
+          {room.settings.gameMode === "race"
+            ? "Race to name it"
+            : room.settings.gameMode === "speed"
+              ? "Faster = more points"
+              : "Whose turn?"}
         </h2>
       </div>
       <div className="font-mono text-xs text-fg-muted">{room.code}</div>
@@ -392,7 +394,7 @@ function Reveal({
   );
 }
 
-function SkipRoundButton({ code }: { code: string }) {
+function SkipRoundButton({ code, mode }: { code: string; mode: "race" | "speed" }) {
   const [loading, setLoading] = useState(false);
   async function skip() {
     setLoading(true);
@@ -405,7 +407,7 @@ function SkipRoundButton({ code }: { code: string }) {
       disabled={loading}
       className="self-start rounded-full border border-border bg-bg-elev px-4 py-1.5 text-xs text-fg-muted transition hover:border-fg-muted hover:text-fg disabled:opacity-50"
     >
-      {loading ? "…" : "Skip / reveal"}
+      {loading ? "…" : mode === "speed" ? "End round / reveal" : "Skip / reveal"}
     </button>
   );
 }

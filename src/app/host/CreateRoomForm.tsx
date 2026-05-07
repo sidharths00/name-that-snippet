@@ -63,7 +63,15 @@ export function CreateRoomForm() {
           current={gameMode}
           onChange={setGameMode}
           title="Race"
-          body="Everyone types at once. First to get title + artist wins the round."
+          body="First to get title + artist wins the round. Speed bonus."
+        />
+        <Choice
+          name="mode"
+          value="speed"
+          current={gameMode}
+          onChange={setGameMode}
+          title="Speed"
+          body="Everyone scores. Each correct hit is worth more the faster you get it."
         />
         <Choice
           name="mode"

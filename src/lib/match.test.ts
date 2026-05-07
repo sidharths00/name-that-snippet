@@ -63,6 +63,44 @@ describe("judgeGuess: artist hits", () => {
   });
 });
 
+describe("judgeGuess: typo tolerance (Levenshtein)", () => {
+  test("single-char typo on long title", () => {
+    const r = judgeGuess("bohemain rhapsody", "Bohemian Rhapsody", ["Queen"]);
+    expect(r.titleHit).toBe(true);
+  });
+  test("single-char typo on artist", () => {
+    const r = judgeGuess("queeen", "Bohemian Rhapsody", ["Queen"]);
+    expect(r.artistHit).toBe(true);
+  });
+  test("two typos on a long token (7+ chars)", () => {
+    const r = judgeGuess("rhapsodi", "Bohemian Rhapsody", ["Queen"]);
+    expect(r.titleHit).toBe(true);
+  });
+  test("typo on short word stays strict", () => {
+    // "soy" vs "you" — too short for fuzzy, should fail
+    const r = judgeGuess("ay", "Stay", ["The Killers"]);
+    expect(r.titleHit).toBe(false);
+  });
+});
+
+describe("judgeGuess: stopwords", () => {
+  test("'the killers' matches 'killers'", () => {
+    const r = judgeGuess("killers", "Mr. Brightside", ["The Killers"]);
+    expect(r.artistHit).toBe(true);
+  });
+  test("'the' alone shouldn't match an artist whose only differentiator is The", () => {
+    const r = judgeGuess("the", "Mr. Brightside", ["The Killers"]);
+    expect(r.artistHit).toBe(false);
+  });
+});
+
+describe("judgeGuess: dash suffix stripping", () => {
+  test("strips ' - 2011 Mix' style suffix", () => {
+    const r = judgeGuess("bohemian rhapsody", "Bohemian Rhapsody - 2011 Mix", ["Queen"]);
+    expect(r.titleHit).toBe(true);
+  });
+});
+
 describe("judgeGuess: edge cases", () => {
   test("empty guess", () => {
     const r = judgeGuess("", "Mr. Brightside", ["The Killers"]);

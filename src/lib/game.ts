@@ -5,7 +5,8 @@ import type { Room, Round, RoundGuess } from "./types";
 
 const TITLE_POINTS = 1;
 const ARTIST_POINTS = 1;
-const SPEED_BONUS_MAX = 2;
+const SPEED_BONUS_MAX = 2; // race mode: bonus on completion
+const SPEED_FIELD_BONUS_MAX = 2; // speed mode: bonus per field hit
 
 export async function startGame(room: Room): Promise<Room> {
   if (room.status !== "lobby") throw new Error("Game already started");
@@ -104,16 +105,21 @@ export async function submitGuess(
     0,
     1 - elapsedSec / room.settings.snippetSeconds,
   );
-  const speedBonus = Math.round(speedFactor * SPEED_BONUS_MAX);
 
   let points = 0;
-  if (newTitleHit) points += TITLE_POINTS;
-  if (newArtistHit) points += ARTIST_POINTS;
-  // Speed bonus only when they fully complete the round on this guess.
-  const completes =
-    (newTitleHit || alreadyTitle) && (newArtistHit || alreadyArtist);
-  const justCompleted = completes && (newTitleHit || newArtistHit);
-  if (justCompleted) points += speedBonus;
+  if (room.settings.gameMode === "speed") {
+    // Each field hit independently scores 1 + (0..SPEED_FIELD_BONUS_MAX) based on time.
+    if (newTitleHit) points += TITLE_POINTS + Math.round(speedFactor * SPEED_FIELD_BONUS_MAX);
+    if (newArtistHit) points += ARTIST_POINTS + Math.round(speedFactor * SPEED_FIELD_BONUS_MAX);
+  } else {
+    if (newTitleHit) points += TITLE_POINTS;
+    if (newArtistHit) points += ARTIST_POINTS;
+    // Race mode: speed bonus only when they fully complete on this guess.
+    const completes =
+      (newTitleHit || alreadyTitle) && (newArtistHit || alreadyArtist);
+    const justCompleted = completes && (newTitleHit || newArtistHit);
+    if (justCompleted) points += Math.round(speedFactor * SPEED_BONUS_MAX);
+  }
 
   player.score += points;
 
@@ -127,7 +133,12 @@ export async function submitGuess(
   };
   round.guesses.push(guess);
 
-  if (justCompleted && room.settings.gameMode === "race") {
+  // Race mode ends the round on the first player to complete both fields.
+  // Speed and turn-based modes keep the round open until the host advances.
+  const completedThisGuess =
+    (newTitleHit || alreadyTitle) && (newArtistHit || alreadyArtist) &&
+    (newTitleHit || newArtistHit);
+  if (room.settings.gameMode === "race" && completedThisGuess) {
     round.winnerId = playerId;
     await endRound(room);
   } else {
@@ -136,7 +147,7 @@ export async function submitGuess(
     await getStore().publish(room.code, {
       type: "guess-submitted",
       room,
-      data: { guess, playerId, points, completed: justCompleted },
+      data: { guess, playerId, points, completed: completedThisGuess },
       at: Date.now(),
     });
   }

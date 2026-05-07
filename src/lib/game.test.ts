@@ -184,6 +184,47 @@ describe("game flow", () => {
     expect(result.guess.points).toBeGreaterThanOrEqual(2);
   });
 
+  test("speed mode: round stays open after first complete; everyone scores", async () => {
+    let room = await createRoom(p("host", true), { rounds: 1, gameMode: "speed", snippetSeconds: 30 }, TRACKS);
+    room = await joinRoom(room.code, p("alice"), TRACKS);
+    room = await joinRoom(room.code, p("bob"), TRACKS);
+    room = await startGame(room);
+    room = await startNextRound(room);
+    const track = room.songPool[0];
+
+    // Alice gets both early — gets points + speed bonus, but round doesn't end
+    room.rounds[0].startedAt = Date.now();
+    let r = await submitGuess(room, "alice", track.name);
+    r = await submitGuess(r.room, "alice", track.artists[0]);
+    expect(r.room.status).toBe("in-round");
+    const aliceScore = r.room.players.find((pl) => pl.id === "alice")!.score;
+    expect(aliceScore).toBeGreaterThan(2); // 1+1 base + bonus
+
+    // Bob also guesses — should still be allowed and scored
+    r = await submitGuess(r.room, "bob", track.name);
+    expect(r.guess.titleHit).toBe(true);
+    expect(r.guess.points).toBeGreaterThanOrEqual(1);
+    expect(r.room.players.find((pl) => pl.id === "bob")!.score).toBeGreaterThan(0);
+  });
+
+  test("speed mode: per-field speed bonus makes early hits worth more than late", async () => {
+    let early = await createRoom(p("host", true), { rounds: 1, gameMode: "speed", snippetSeconds: 30 }, TRACKS);
+    early = await startGame(early);
+    early = await startNextRound(early);
+    const track = early.songPool[0];
+    early.rounds[0].startedAt = Date.now();
+    const earlyR = await submitGuess(early, "host", track.name);
+
+    let late = await createRoom(p("host", true), { rounds: 1, gameMode: "speed", snippetSeconds: 30 }, TRACKS);
+    late = await startGame(late);
+    late = await startNextRound(late);
+    const lateTrack = late.songPool[0];
+    late.rounds[0].startedAt = Date.now() - 28_000; // near end
+    const lateR = await submitGuess(late, "host", lateTrack.name);
+
+    expect(earlyR.guess.points).toBeGreaterThan(lateR.guess.points);
+  });
+
   test("game finishes after configured rounds", async () => {
     let room = await createRoom(p("host", true), { rounds: 2 }, TRACKS);
     room = await startGame(room);

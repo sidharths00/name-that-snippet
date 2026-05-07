@@ -1,4 +1,4 @@
-export type GameMode = "race" | "turns";
+export type GameMode = "race" | "turns" | "speed";
 export type PlaybackMode = "host-only" | "everyone";
 export type RoomStatus = "lobby" | "loading-songs" | "in-round" | "round-result" | "finished";
 

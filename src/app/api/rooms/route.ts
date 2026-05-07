@@ -8,7 +8,7 @@ import { getUserLibrarySample } from "@/lib/spotify";
 export const runtime = "nodejs";
 
 const Body = z.object({
-  gameMode: z.enum(["race", "turns"]).optional(),
+  gameMode: z.enum(["race", "turns", "speed"]).optional(),
   playbackMode: z.enum(["host-only", "everyone"]).optional(),
   rounds: z.number().int().min(3).max(30).optional(),
   snippetSeconds: z.number().int().min(5).max(60).optional(),
