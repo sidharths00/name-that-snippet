@@ -5,7 +5,7 @@ import type { SimpleTrack } from "./spotify";
 
 export const DEFAULT_SETTINGS: RoomSettings = {
   gameMode: "race",
-  playbackMode: "host-only",
+  playbackMode: "everyone",
   rounds: 10,
   snippetSeconds: 20,
   uniqueTrackRatio: 0.2,

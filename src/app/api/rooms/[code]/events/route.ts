@@ -26,10 +26,14 @@ export async function GET(req: Request, { params }: { params: Promise<{ code: st
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
       }
 
+      let lastUpdatedAt = room.updatedAt;
       send({ type: "room-updated", room: publicRoom(room, viewerId), at: Date.now() });
 
+      // In-process pub/sub: instant updates when the change happens on the
+      // same Vercel function instance.
       const unsubscribe = store.subscribe(upper, (ev) => {
         try {
+          if (ev.room) lastUpdatedAt = ev.room.updatedAt;
           const payload: PublicGameEvent = ev.room
             ? { ...ev, room: publicRoom(ev.room, viewerId) }
             : { ...ev, room: undefined };
@@ -38,6 +42,28 @@ export async function GET(req: Request, { params }: { params: Promise<{ code: st
           // stream closed
         }
       });
+
+      // Cross-instance fallback: poll Redis every 2s for changes. Vercel
+      // routes requests to whichever warm instance is available, so the host
+      // and joiner aren't guaranteed to share an in-process bus.
+      const pollInterval = setInterval(async () => {
+        try {
+          const fresh = await store.getRoom(upper);
+          if (fresh && fresh.updatedAt > lastUpdatedAt) {
+            lastUpdatedAt = fresh.updatedAt;
+            send({
+              type: "room-updated",
+              room: publicRoom(fresh, viewerId),
+              at: Date.now(),
+            });
+          } else if (!fresh) {
+            // Room got deleted — close the stream so the client can react.
+            cleanup?.();
+          }
+        } catch {
+          // ignore — try again next tick
+        }
+      }, 2000);
 
       const heartbeat = setInterval(() => {
         try {
@@ -49,6 +75,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ code: st
 
       cleanup = () => {
         clearInterval(heartbeat);
+        clearInterval(pollInterval);
         unsubscribe();
         try {
           controller.close();

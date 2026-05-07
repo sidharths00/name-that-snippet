@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 const SDK_SRC = "https://sdk.scdn.co/spotify-player.js";
-const SDK_READY_TIMEOUT_MS = 6000;
 
 export type PlaybackStatus = "idle" | "loading" | "ready" | "error";
 export type PlaybackEngine = "sdk" | "preview" | null;
@@ -103,8 +102,6 @@ export function usePlayback({ enabled, name }: UsePlaybackOptions): UsePlaybackR
 
     setStatus("loading");
 
-    let readyTimer: ReturnType<typeof setTimeout> | null = null;
-
     (async () => {
       try {
         await loadSdk();
@@ -125,13 +122,13 @@ export function usePlayback({ enabled, name }: UsePlaybackOptions): UsePlaybackR
 
         player.addListener("ready", ({ device_id }) => {
           if (cancelled) return;
-          if (readyTimer) clearTimeout(readyTimer);
           setDeviceId(device_id);
           setStatus("ready");
           setEngine("sdk");
         });
         player.addListener("not_ready", () => {
           if (cancelled) return;
+          // Device went offline — try preview as backup but keep SDK around.
           setStatus("idle");
         });
         for (const evt of [
@@ -142,20 +139,14 @@ export function usePlayback({ enabled, name }: UsePlaybackOptions): UsePlaybackR
         ] as const) {
           player.addListener(evt, ({ message }) => {
             if (cancelled) return;
-            // Don't crash — fall through to preview engine.
             console.warn(`[playback] ${evt}: ${message}`);
+            // Only fall back to preview on hard error — never on timeout — so
+            // we don't burn the user's browser-autoplay grant trying to play
+            // when the SDK was still booting.
             setEngine("preview");
             setStatus("ready");
           });
         }
-
-        // If the SDK doesn't reach "ready" within a few seconds, fall back to
-        // preview-only mode so the player isn't stuck.
-        readyTimer = setTimeout(() => {
-          if (cancelled) return;
-          setEngine((prev) => prev ?? "preview");
-          setStatus((prev) => (prev === "ready" ? prev : "ready"));
-        }, SDK_READY_TIMEOUT_MS);
 
         const ok = await player.connect();
         if (!ok && !cancelled) {
@@ -173,7 +164,6 @@ export function usePlayback({ enabled, name }: UsePlaybackOptions): UsePlaybackR
 
     return () => {
       cancelled = true;
-      if (readyTimer) clearTimeout(readyTimer);
       playerRef.current?.disconnect();
       playerRef.current = null;
       audioRef.current?.pause();

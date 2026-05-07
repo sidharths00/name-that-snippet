@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { usePlayback } from "@/components/usePlayback";
+import { useRoomPlayback } from "./RoomClient";
 import type { PublicRoom } from "@/lib/types";
 import type { Viewer } from "./RoomClient";
 
@@ -22,14 +22,8 @@ export function GameView({
   const inResult = room.status === "round-result";
   const track = room.currentTrack;
 
-  const shouldPlay =
-    (room.settings.playbackMode === "host-only" && isHost) ||
-    room.settings.playbackMode === "everyone";
-
-  const playback = usePlayback({
-    enabled: shouldPlay && viewer.isPremium,
-    name: `Name That Snippet — ${viewer.name}`,
-  });
+  const playback = useRoomPlayback();
+  const shouldPlay = playback.shouldPlay;
 
   const playedTrackIdRef = useRef<string | null>(null);
   const [needsTap, setNeedsTap] = useState(false);

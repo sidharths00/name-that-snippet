@@ -7,7 +7,7 @@ import type { GameMode, PlaybackMode } from "@/lib/types";
 export function CreateRoomForm() {
   const router = useRouter();
   const [gameMode, setGameMode] = useState<GameMode>("race");
-  const [playbackMode, setPlaybackMode] = useState<PlaybackMode>("host-only");
+  const [playbackMode, setPlaybackMode] = useState<PlaybackMode>("everyone");
   const [rounds, setRounds] = useState(10);
   const [snippetSeconds, setSnippetSeconds] = useState(20);
   const [submitting, setSubmitting] = useState(false);

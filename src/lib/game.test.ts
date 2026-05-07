@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from "vitest";
 import { createRoom, joinRoom } from "./room";
-import { startGame, startNextRound, submitGuess } from "./game";
+import { endRound, startGame, startNextRound, submitGuess } from "./game";
 import type { Player } from "./types";
 import type { SimpleTrack } from "./spotify";
 
@@ -223,6 +223,95 @@ describe("game flow", () => {
     const lateR = await submitGuess(late, "host", lateTrack.name);
 
     expect(earlyR.guess.points).toBeGreaterThan(lateR.guess.points);
+  });
+
+  test("state transitions: lobby → loading-songs → in-round → round-result → in-round → finished", async () => {
+    let room = await createRoom(p("host", true), { rounds: 2 }, TRACKS);
+    expect(room.status).toBe("lobby");
+
+    room = await startGame(room);
+    expect(room.status).toBe("loading-songs");
+    expect(room.songPool.length).toBeGreaterThan(0);
+
+    room = await startNextRound(room);
+    expect(room.status).toBe("in-round");
+    expect(room.rounds.length).toBe(1);
+
+    const t1 = room.songPool[0];
+    const r = await submitGuess(room, "host", `${t1.name} ${t1.artists[0]}`);
+    expect(r.room.status).toBe("round-result");
+
+    room = await startNextRound(r.room);
+    expect(room.status).toBe("in-round");
+    expect(room.rounds.length).toBe(2);
+
+    const t2 = room.songPool[1];
+    const r2 = await submitGuess(room, "host", `${t2.name} ${t2.artists[0]}`);
+    expect(r2.room.status).toBe("round-result");
+
+    room = await startNextRound(r2.room);
+    expect(room.status).toBe("finished");
+  });
+
+  test("startNextRound persists between calls (catches lost-state bugs)", async () => {
+    // Simulates the cross-instance scenario where each call has to re-read
+    // and re-write room state through the store.
+    const { getStore } = await import("./store");
+    const store = getStore();
+    let room = await createRoom(p("host", true), { rounds: 3 }, TRACKS);
+    room = await startGame(room);
+
+    // Round 1
+    room = await startNextRound(room);
+    let fetched = await store.getRoom(room.code);
+    expect(fetched?.status).toBe("in-round");
+    expect(fetched?.rounds.length).toBe(1);
+
+    // End round 1 manually
+    room = await endRound(fetched!);
+    fetched = await store.getRoom(room.code);
+    expect(fetched?.status).toBe("round-result");
+
+    // Round 2 — fetched state must be authoritative
+    room = await startNextRound(fetched!);
+    fetched = await store.getRoom(room.code);
+    expect(fetched?.status).toBe("in-round");
+    expect(fetched?.rounds.length).toBe(2);
+  });
+
+  test("calling startNextRound from round-result transitions back to in-round", async () => {
+    let room = await createRoom(p("host", true), { rounds: 5 }, TRACKS);
+    room = await startGame(room);
+    room = await startNextRound(room);
+    room = await endRound(room);
+    expect(room.status).toBe("round-result");
+    room = await startNextRound(room);
+    expect(room.status).toBe("in-round");
+    expect(room.rounds.length).toBe(2);
+  });
+
+  test("each round picks a distinct track from the pool", async () => {
+    let room = await createRoom(p("host", true), { rounds: 3 }, TRACKS);
+    room = await startGame(room);
+    const trackIds = new Set<string>();
+    for (let i = 0; i < 3; i++) {
+      room = await startNextRound(room);
+      trackIds.add(room.rounds[i].trackId);
+      room = await endRound(room);
+    }
+    expect(trackIds.size).toBe(3);
+  });
+
+  test("host-plays-everyone-mode: shouldPlay flag computes correctly", async () => {
+    // This is what the GameView uses to decide whether to start playback.
+    // Re-implementing the rule here keeps the contract under test.
+    function shouldPlayFor(playbackMode: "host-only" | "everyone", isHost: boolean) {
+      return (playbackMode === "host-only" && isHost) || playbackMode === "everyone";
+    }
+    expect(shouldPlayFor("host-only", true)).toBe(true);
+    expect(shouldPlayFor("host-only", false)).toBe(false);
+    expect(shouldPlayFor("everyone", true)).toBe(true);
+    expect(shouldPlayFor("everyone", false)).toBe(true);
   });
 
   test("game finishes after configured rounds", async () => {

@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Logo } from "@/components/Logo";
 import { Lobby } from "./Lobby";
 import { GameView } from "./GameView";
 import { FinalScoreboard } from "./FinalScoreboard";
+import { usePlayback, type PlaybackStatus, type PlaybackEngine } from "@/components/usePlayback";
 import type { PublicGameEvent, PublicRoom } from "@/lib/types";
 
 export interface Viewer {
@@ -14,6 +15,27 @@ export interface Viewer {
   name: string;
   image: string | null;
   isPremium: boolean;
+}
+
+interface PlaybackBridge {
+  status: PlaybackStatus;
+  engine: PlaybackEngine;
+  error: string | null;
+  shouldPlay: boolean;
+  play: (target: { uri: string; previewUrl: string | null }, positionMs?: number) => Promise<boolean>;
+  pause: () => Promise<void>;
+}
+
+const RoomRefreshContext = createContext<() => Promise<void>>(async () => {});
+export function useRefreshRoom() {
+  return useContext(RoomRefreshContext);
+}
+
+const PlaybackContext = createContext<PlaybackBridge | null>(null);
+export function useRoomPlayback() {
+  const ctx = useContext(PlaybackContext);
+  if (!ctx) throw new Error("useRoomPlayback used outside RoomClient");
+  return ctx;
 }
 
 export function RoomClient({
@@ -27,6 +49,30 @@ export function RoomClient({
   const [connected, setConnected] = useState(false);
   const router = useRouter();
   const joinedRef = useRef(false);
+
+  // SHOULD this device produce audio? Computed up here so the SDK can warm
+  // up during the lobby — by the time round 1 starts, the device is ready.
+  const isHost = room.hostId === viewer.id;
+  const shouldPlay =
+    (room.settings.playbackMode === "host-only" && isHost) ||
+    room.settings.playbackMode === "everyone";
+
+  const playback = usePlayback({
+    enabled: shouldPlay && viewer.isPremium,
+    name: `Name That Snippet — ${viewer.name}`,
+  });
+
+  const playbackBridge = useMemo<PlaybackBridge>(
+    () => ({
+      status: playback.status,
+      engine: playback.engine,
+      error: playback.error,
+      shouldPlay,
+      play: playback.play,
+      pause: playback.pause,
+    }),
+    [playback.status, playback.engine, playback.error, shouldPlay, playback.play, playback.pause],
+  );
 
   // Auto-join if the viewer isn't yet in the room (deep-linked via URL).
   useEffect(() => {
@@ -57,6 +103,17 @@ export function RoomClient({
     return () => es.close();
   }, [room.code]);
 
+  const refreshRoom = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/rooms/${room.code}`, { cache: "no-store" });
+      if (!res.ok) return;
+      const data = (await res.json()) as { room?: PublicRoom };
+      if (data.room) setRoom(data.room);
+    } catch {
+      // ignore — SSE will catch up
+    }
+  }, [room.code]);
+
   // Best-effort leave on tab close (avoids ghost players in the lobby).
   useEffect(() => {
     function leave() {
@@ -65,8 +122,6 @@ export function RoomClient({
     window.addEventListener("beforeunload", leave);
     return () => window.removeEventListener("beforeunload", leave);
   }, [room.code]);
-
-  const isHost = room.hostId === viewer.id;
 
   const view = useMemo(() => {
     if (room.status === "finished") {
@@ -79,27 +134,31 @@ export function RoomClient({
   }, [room, viewer, isHost, router]);
 
   return (
-    <main className="relative flex min-h-screen flex-col">
-      <header className="flex items-center justify-between px-6 py-4 sm:px-10">
-        <Link href="/">
-          <Logo />
-        </Link>
-        <div className="flex items-center gap-3 text-xs">
-          <span
-            className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 ${
-              connected ? "bg-accent/15 text-accent" : "bg-bg-elev text-fg-muted"
-            }`}
-          >
-            <span
-              className={`h-1.5 w-1.5 rounded-full ${
-                connected ? "bg-accent" : "bg-fg-muted"
-              }`}
-            />
-            {connected ? "Live" : "Reconnecting…"}
-          </span>
-        </div>
-      </header>
-      {view}
-    </main>
+    <RoomRefreshContext.Provider value={refreshRoom}>
+      <PlaybackContext.Provider value={playbackBridge}>
+        <main className="relative flex min-h-screen flex-col">
+          <header className="flex items-center justify-between px-6 py-4 sm:px-10">
+            <Link href="/">
+              <Logo />
+            </Link>
+            <div className="flex items-center gap-3 text-xs">
+              <span
+                className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 ${
+                  connected ? "bg-accent/15 text-accent" : "bg-bg-elev text-fg-muted"
+                }`}
+              >
+                <span
+                  className={`h-1.5 w-1.5 rounded-full ${
+                    connected ? "bg-accent" : "bg-fg-muted"
+                  }`}
+                />
+                {connected ? "Live" : "Reconnecting…"}
+              </span>
+            </div>
+          </header>
+          {view}
+        </main>
+      </PlaybackContext.Provider>
+    </RoomRefreshContext.Provider>
   );
 }
