@@ -129,6 +129,34 @@ describe("judgeGuess: dash suffix stripping", () => {
   });
 });
 
+describe("judgeGuess: false-positive guards", () => {
+  test("'nine to five' does NOT match '25 or 6 to 4'", () => {
+    const r = judgeGuess(
+      "nine to five",
+      "25 or 6 to 4 - 2002 Remaster",
+      ["Chicago"],
+    );
+    expect(r.titleHit).toBe(false);
+    expect(r.artistHit).toBe(false);
+  });
+  test("'in the' alone shouldn't match anything", () => {
+    const r = judgeGuess("in the", "In the End", ["Linkin Park"]);
+    expect(r.titleHit).toBe(false);
+  });
+  test("but 'end' alone DOES match 'In the End' (load-bearing word)", () => {
+    const r = judgeGuess("end", "In the End", ["Linkin Park"]);
+    expect(r.titleHit).toBe(true);
+  });
+  test("real-world: '9 to 5' matches '9 to 5'", () => {
+    const r = judgeGuess("9 to 5", "9 to 5", ["Dolly Parton"]);
+    expect(r.titleHit).toBe(true);
+  });
+  test("'just the two of us' matches itself", () => {
+    const r = judgeGuess("just the two of us", "Just the Two of Us", ["Bill Withers"]);
+    expect(r.titleHit).toBe(true);
+  });
+});
+
 describe("judgeGuess: edge cases", () => {
   test("empty guess", () => {
     const r = judgeGuess("", "Mr. Brightside", ["The Killers"]);

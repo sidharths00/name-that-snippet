@@ -6,7 +6,13 @@ const STRIP_PARENS = /\([^)]*\)|\[[^\]]*\]/g;
 const STRIP_FEAT = /\b(feat\.?|featuring|ft\.?|with|w\/)\b.*$/i;
 const STRIP_DASH_SUFFIX = /\s+-\s+.*$/;
 const STRIP_NOISE = /\b(remaster(ed)?|remix|deluxe|mono|stereo|acoustic|live|version|edit|extended|radio|original|bonus|track|single|album)\b/gi;
-const STOPWORDS = new Set(["the", "a", "an"]);
+// Common English connectives. We filter these from both guess and target so
+// shared filler words don't create false matches (e.g., "nine to five" vs.
+// "25 or 6 to 4" — both contain "to" but neither is the same song).
+const STOPWORDS = new Set([
+  "the", "a", "an",
+  "to", "of", "and", "or", "in", "on", "for", "at", "by", "is",
+]);
 const NON_ALNUM = /[^a-z0-9 ]+/g;
 const MULTI_SPACE = /\s+/g;
 
