@@ -95,6 +95,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
   ],
   session: { strategy: "jwt" },
+  pages: {
+    error: "/auth/error",
+  },
   callbacks: {
     async jwt({ token, account, profile }) {
       if (account && account.access_token) {
