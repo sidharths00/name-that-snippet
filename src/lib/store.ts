@@ -83,13 +83,19 @@ let _store: Store | null = null;
 
 export function getStore(): Store {
   if (_store) return _store;
-  const url = process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  // Vercel Marketplace ships Upstash with KV_REST_API_* names; standalone
+  // Upstash deployments use UPSTASH_REDIS_REST_*. Accept either.
+  const url =
+    process.env.KV_REST_API_URL ?? process.env.UPSTASH_REDIS_REST_URL;
+  const token =
+    process.env.KV_REST_API_TOKEN ?? process.env.UPSTASH_REDIS_REST_TOKEN;
   if (url && token) {
     _store = new RedisStore(new Redis({ url, token }));
   } else {
     if (process.env.NODE_ENV === "production") {
-      console.warn("[store] Upstash Redis not configured — using in-memory store. Rooms will not survive a redeploy.");
+      console.warn(
+        "[store] Upstash Redis not configured — using in-memory store. Rooms will not survive a redeploy.",
+      );
     }
     _store = new MemoryStore();
   }
