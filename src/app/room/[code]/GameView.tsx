@@ -32,15 +32,32 @@ export function GameView({
   });
 
   const playedTrackIdRef = useRef<string | null>(null);
+  const [needsTap, setNeedsTap] = useState(false);
   useEffect(() => {
     if (!shouldPlay || !track || !inRound) return;
     if (playback.status !== "ready") return;
     if (playedTrackIdRef.current === track.id) return;
     playedTrackIdRef.current = track.id;
-    playback.play(track.uri, DEFAULT_START_OFFSET_MS).catch((err) => {
-      console.error("[playback] play failed", err);
-    });
+    setNeedsTap(false);
+    playback.play({ uri: track.uri, previewUrl: track.previewUrl }, DEFAULT_START_OFFSET_MS).then(
+      (ok) => {
+        if (!ok) setNeedsTap(true);
+      },
+      (err) => {
+        console.error("[playback] play failed", err);
+        setNeedsTap(true);
+      },
+    );
   }, [shouldPlay, track, inRound, playback]);
+
+  async function tapToPlay() {
+    if (!track) return;
+    const ok = await playback.play(
+      { uri: track.uri, previewUrl: track.previewUrl },
+      DEFAULT_START_OFFSET_MS,
+    );
+    if (ok) setNeedsTap(false);
+  }
 
   useEffect(() => {
     if (inResult && shouldPlay) {
@@ -64,7 +81,11 @@ export function GameView({
               shouldPlay={shouldPlay}
               isPremium={viewer.isPremium}
               playbackStatus={playback.status}
+              playbackEngine={playback.engine}
               playbackError={playback.error}
+              hasPreview={!!track?.previewUrl}
+              needsTap={needsTap}
+              onTap={tapToPlay}
             />
           )}
 
@@ -157,14 +178,22 @@ function NowPlaying({
   shouldPlay,
   isPremium,
   playbackStatus,
+  playbackEngine,
   playbackError,
+  hasPreview,
+  needsTap,
+  onTap,
 }: {
   durationMs: number;
   startedAt: number | null;
   shouldPlay: boolean;
   isPremium: boolean;
   playbackStatus: string;
+  playbackEngine: "sdk" | "preview" | null;
   playbackError: string | null;
+  hasPreview: boolean;
+  needsTap: boolean;
+  onTap: () => void;
 }) {
   const [progress, setProgress] = useState(0);
   const [secondsLeft, setSecondsLeft] = useState(Math.ceil(durationMs / 1000));
@@ -184,11 +213,15 @@ function NowPlaying({
     ? "Listening on host's speaker"
     : !isPremium
       ? "Premium needed for in-app playback"
-      : playbackStatus === "ready"
-        ? "Streaming on this device"
-        : playbackStatus === "loading"
-          ? "Connecting to Spotify…"
-          : (playbackError ?? "Playback unavailable");
+      : playbackStatus === "loading"
+        ? "Connecting to Spotify…"
+        : playbackEngine === "preview" && !hasPreview
+          ? "No preview available — skip with host's button"
+          : playbackEngine === "preview"
+            ? "Playing 30s preview"
+            : playbackStatus === "ready"
+              ? "Streaming on this device"
+              : (playbackError ?? "Playback unavailable");
 
   const timeIsUp = secondsLeft <= 0;
   return (
@@ -218,6 +251,14 @@ function NowPlaying({
           style={{ width: `${progress * 100}%` }}
         />
       </div>
+      {needsTap && shouldPlay && (
+        <button
+          onClick={onTap}
+          className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-full bg-accent text-sm font-semibold text-accent-fg transition active:scale-[0.99]"
+        >
+          ▶ Tap to start audio
+        </button>
+      )}
     </div>
   );
 }
