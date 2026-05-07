@@ -85,4 +85,25 @@ describe("memory store", () => {
     ua();
     ub();
   });
+
+  test("user history: add and read back", async () => {
+    const store = getStore();
+    await store.addUserHistory("user-A", ["t1", "t2", "t3"]);
+    const hist = await store.getUserHistory("user-A");
+    expect(hist.sort()).toEqual(["t1", "t2", "t3"]);
+  });
+
+  test("user history: dedupes additions", async () => {
+    const store = getStore();
+    await store.addUserHistory("user-B", ["t1", "t2"]);
+    await store.addUserHistory("user-B", ["t2", "t3"]);
+    const hist = await store.getUserHistory("user-B");
+    expect(hist.sort()).toEqual(["t1", "t2", "t3"]);
+  });
+
+  test("user history: empty for unknown user", async () => {
+    const store = getStore();
+    const hist = await store.getUserHistory("nobody");
+    expect(hist).toEqual([]);
+  });
 });

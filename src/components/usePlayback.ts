@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 const SDK_SRC = "https://sdk.scdn.co/spotify-player.js";
+const SDK_READY_TIMEOUT_MS = 12_000;
 
 export type PlaybackStatus = "idle" | "loading" | "ready" | "error";
 export type PlaybackEngine = "sdk" | "preview" | null;
@@ -102,6 +103,9 @@ export function usePlayback({ enabled, name }: UsePlaybackOptions): UsePlaybackR
 
     setStatus("loading");
 
+    let stuckTimer: ReturnType<typeof setTimeout> | null = null;
+    let sdkReady = false;
+
     (async () => {
       try {
         await loadSdk();
@@ -122,6 +126,8 @@ export function usePlayback({ enabled, name }: UsePlaybackOptions): UsePlaybackR
 
         player.addListener("ready", ({ device_id }) => {
           if (cancelled) return;
+          if (stuckTimer) clearTimeout(stuckTimer);
+          sdkReady = true;
           setDeviceId(device_id);
           setStatus("ready");
           setEngine("sdk");
@@ -154,6 +160,17 @@ export function usePlayback({ enabled, name }: UsePlaybackOptions): UsePlaybackR
           setStatus("ready");
         }
         playerRef.current = player;
+
+        // Long stuck-on-connecting safety net — if the SDK never fires
+        // "ready" after 12s, switch to preview engine so the round can play.
+        // The play call will need a fresh user gesture if autoplay is blocked,
+        // and the GameView already handles that via the tap-to-play button.
+        stuckTimer = setTimeout(() => {
+          if (cancelled || sdkReady) return;
+          console.warn("[playback] SDK stuck — falling back to preview engine");
+          setEngine("preview");
+          setStatus("ready");
+        }, SDK_READY_TIMEOUT_MS);
       } catch (err) {
         if (cancelled) return;
         console.warn("[playback] SDK init failed", err);
@@ -164,6 +181,7 @@ export function usePlayback({ enabled, name }: UsePlaybackOptions): UsePlaybackR
 
     return () => {
       cancelled = true;
+      if (stuckTimer) clearTimeout(stuckTimer);
       playerRef.current?.disconnect();
       playerRef.current = null;
       audioRef.current?.pause();

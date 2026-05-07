@@ -9,13 +9,20 @@ interface Store {
   deleteRoom(code: string): Promise<void>;
   publish(code: string, event: GameEvent): Promise<void>;
   subscribe(code: string, listener: Listener): () => void;
+  /** Add played trackIds to a user's cross-game history. */
+  addUserHistory(userId: string, trackIds: string[]): Promise<void>;
+  /** Get a user's cross-game played trackIds (capped at most-recent N). */
+  getUserHistory(userId: string): Promise<string[]>;
 }
 
 const ROOM_TTL_SECONDS = 60 * 60 * 6;
+const USER_HISTORY_TTL_SECONDS = 60 * 60 * 24 * 60; // 60 days
+const USER_HISTORY_CAP = 1000;
 
 class MemoryStore implements Store {
   private rooms = new Map<string, Room>();
   private listeners = new Map<string, Set<Listener>>();
+  private histories = new Map<string, string[]>();
 
   async getRoom(code: string) {
     return this.rooms.get(code) ?? null;
@@ -49,6 +56,14 @@ class MemoryStore implements Store {
       set?.delete(listener);
     };
   }
+  async addUserHistory(userId: string, trackIds: string[]) {
+    const existing = this.histories.get(userId) ?? [];
+    const merged = Array.from(new Set([...existing, ...trackIds]));
+    this.histories.set(userId, merged.slice(-USER_HISTORY_CAP));
+  }
+  async getUserHistory(userId: string) {
+    return this.histories.get(userId) ?? [];
+  }
 }
 
 class RedisStore implements Store {
@@ -76,6 +91,26 @@ class RedisStore implements Store {
   }
   subscribe(code: string, listener: Listener) {
     return this.memoryFanout.subscribe(code, listener);
+  }
+  private historyKey(userId: string) {
+    return `user:hist:${userId}`;
+  }
+  async addUserHistory(userId: string, trackIds: string[]) {
+    if (trackIds.length === 0) return;
+    const key = this.historyKey(userId);
+    // SADD dedupes; trim to cap with SPOP if we go over.
+    await this.redis.sadd(key, trackIds[0], ...trackIds.slice(1));
+    await this.redis.expire(key, USER_HISTORY_TTL_SECONDS);
+    const size = await this.redis.scard(key);
+    if (size > USER_HISTORY_CAP) {
+      // Trim by popping random members (Set has no order; this is "good
+      // enough" eviction — exact recency isn't critical).
+      await this.redis.spop(key, size - USER_HISTORY_CAP);
+    }
+  }
+  async getUserHistory(userId: string) {
+    const members = await this.redis.smembers<string[]>(this.historyKey(userId));
+    return members ?? [];
   }
 }
 

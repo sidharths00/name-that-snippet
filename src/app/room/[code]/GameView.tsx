@@ -640,7 +640,18 @@ function WaitingForHost() {
 function Scoreboard({ room, viewer }: { room: PublicRoom; viewer: Viewer }) {
   const sorted = [...room.players].sort((a, b) => b.score - a.score);
   const isSolo = room.players.length === 1;
-  if (isSolo) return null; // No need for a scoreboard with one player; chip in header is enough.
+  if (isSolo) return null;
+
+  const currentRound = room.rounds[room.rounds.length - 1];
+  const inRound = room.status === "in-round";
+  function progressFor(playerId: string) {
+    if (!currentRound) return { title: false, artist: false };
+    const guesses = currentRound.guesses.filter((g) => g.playerId === playerId);
+    return {
+      title: guesses.some((g) => g.titleHit),
+      artist: guesses.some((g) => g.artistHit),
+    };
+  }
 
   return (
     <aside className="order-first space-y-2 rounded-2xl border border-border bg-bg-elev p-3 sm:p-4 lg:order-none lg:sticky lg:top-4 lg:self-start lg:p-5">
@@ -648,30 +659,52 @@ function Scoreboard({ room, viewer }: { room: PublicRoom; viewer: Viewer }) {
         Scoreboard
       </p>
       <ul className="space-y-1.5 sm:space-y-2">
-        {sorted.map((p, i) => (
-          <li
-            key={p.id}
-            className={`flex items-center justify-between rounded-lg px-2.5 py-1.5 transition sm:rounded-xl sm:px-3 sm:py-2 ${
-              p.id === viewer.id ? "bg-accent/10 ring-1 ring-accent/30" : "bg-bg-elev-2/60"
-            }`}
-          >
-            <div className="flex min-w-0 items-center gap-2">
-              <span className="w-4 shrink-0 text-center font-mono text-xs text-fg-muted">
-                {i + 1}
+        {sorted.map((p, i) => {
+          const prog = progressFor(p.id);
+          return (
+            <li
+              key={p.id}
+              className={`flex items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 transition sm:rounded-xl sm:px-3 sm:py-2 ${
+                p.id === viewer.id ? "bg-accent/10 ring-1 ring-accent/30" : "bg-bg-elev-2/60"
+              }`}
+            >
+              <div className="flex min-w-0 flex-1 items-center gap-2">
+                <span className="w-4 shrink-0 text-center font-mono text-xs text-fg-muted">
+                  {i + 1}
+                </span>
+                <span className="truncate text-sm font-semibold">
+                  {p.name}
+                  {p.id === viewer.id && (
+                    <span className="ml-1 text-[10px] font-normal text-fg-muted">you</span>
+                  )}
+                </span>
+              </div>
+              {inRound && currentRound && (
+                <div className="flex shrink-0 items-center gap-1">
+                  <ProgressBadge label="T" hit={prog.title} />
+                  <ProgressBadge label="A" hit={prog.artist} />
+                </div>
+              )}
+              <span className="ml-1 shrink-0 font-mono text-base font-black tabular-nums">
+                {p.score}
               </span>
-              <span className="truncate text-sm font-semibold">
-                {p.name}
-                {p.id === viewer.id && (
-                  <span className="ml-1 text-[10px] font-normal text-fg-muted">you</span>
-                )}
-              </span>
-            </div>
-            <span className="ml-2 shrink-0 font-mono text-base font-black tabular-nums">
-              {p.score}
-            </span>
-          </li>
-        ))}
+            </li>
+          );
+        })}
       </ul>
     </aside>
+  );
+}
+
+function ProgressBadge({ label, hit }: { label: string; hit: boolean }) {
+  return (
+    <span
+      title={`${label === "T" ? "Title" : "Artist"} ${hit ? "✓ hit" : "not yet"}`}
+      className={`grid h-5 w-5 place-items-center rounded-md font-mono text-[10px] font-black transition ${
+        hit ? "bg-accent text-accent-fg" : "bg-bg-elev/80 text-fg-muted/60"
+      }`}
+    >
+      {hit ? "✓" : label}
+    </span>
   );
 }

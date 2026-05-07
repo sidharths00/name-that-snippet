@@ -370,6 +370,44 @@ describe("game flow", () => {
     expect(room.songPool.length).toBe(TRACKS.length); // 5
   });
 
+  test("per-user history excludes prior tracks even in a brand-new room", async () => {
+    const { getStore } = await import("./store");
+    const bigLib: SimpleTrack[] = Array.from({ length: 20 }, (_, i) =>
+      t(`u${i}`, `Track ${i}`, [`Artist ${i}`]),
+    );
+
+    // Seed: pretend the host already played 5 of these tracks before
+    await getStore().addUserHistory("returner", ["u0", "u1", "u2", "u3", "u4"]);
+
+    let room = await createRoom(p("returner", true), { rounds: 5 }, bigLib);
+    room = await startGame(room);
+    const poolIds = new Set(room.songPool.map((tt) => tt.id));
+    for (const id of ["u0", "u1", "u2", "u3", "u4"]) {
+      expect(poolIds.has(id)).toBe(false);
+    }
+  });
+
+  test("finishGame writes to each player's history", async () => {
+    const { getStore } = await import("./store");
+    const bigLib: SimpleTrack[] = Array.from({ length: 20 }, (_, i) =>
+      t(`f${i}`, `Track ${i}`, [`Artist ${i}`]),
+    );
+    let room = await createRoom(p("h1", true), { rounds: 3 }, bigLib);
+    room = await joinRoom(room.code, p("g1"), bigLib);
+    room = await startGame(room);
+    const expected = room.songPool.slice(0, 3).map((t) => t.id);
+
+    for (let i = 0; i < 3; i++) room = await startNextRound(room);
+    room = await finishGame(room);
+
+    const hostHist = await getStore().getUserHistory("h1");
+    const guestHist = await getStore().getUserHistory("g1");
+    for (const id of expected) {
+      expect(hostHist).toContain(id);
+      expect(guestHist).toContain(id);
+    }
+  });
+
   test("usedTrackIds accumulates across multiple restarts", async () => {
     const bigLib: SimpleTrack[] = Array.from({ length: 30 }, (_, i) =>
       t(`x${i}`, `Track ${i}`, [`Artist ${i}`]),

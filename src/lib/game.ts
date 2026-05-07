@@ -13,12 +13,23 @@ export async function startGame(room: Room): Promise<Room> {
   if (room.players.length < 1) throw new Error("Need at least 1 player");
 
   room.status = "loading-songs";
+
+  // Cross-game memory: union every player's prior-game history with the
+  // current room's used trackIds so we don't repeat songs anyone has heard.
+  const store = getStore();
+  const userHistories = await Promise.all(
+    room.players.map((p) => store.getUserHistory(p.id).catch(() => [] as string[])),
+  );
+  const exclude = Array.from(
+    new Set([...(room.usedTrackIds ?? []), ...userHistories.flat()]),
+  );
+
   room.songPool = buildSongPool(
     room.players,
     room.libraryByPlayer,
     room.settings.rounds,
     room.settings.uniqueTrackRatio,
-    room.usedTrackIds ?? [],
+    exclude,
   );
   if (room.songPool.length === 0) {
     throw new Error("Couldn't find any tracks across the players' libraries");
@@ -196,7 +207,22 @@ export async function finishGame(room: Room): Promise<Room> {
   room.status = "finished";
   room.updatedAt = Date.now();
   await persist(room);
-  await getStore().publish(room.code, {
+
+  // Save the just-completed game's trackIds to each player's history so
+  // future games (this room or new ones) don't repeat for them.
+  const store = getStore();
+  const trackIds = room.rounds.map((r) => r.trackId);
+  if (trackIds.length > 0) {
+    await Promise.all(
+      room.players.map((p) =>
+        store.addUserHistory(p.id, trackIds).catch(() => {
+          // Don't fail the game on history-write errors.
+        }),
+      ),
+    );
+  }
+
+  await store.publish(room.code, {
     type: "game-finished",
     room,
     at: Date.now(),
