@@ -27,6 +27,7 @@ export interface Track {
   artists: string[];
   durationMs: number;
   previewUrl: string | null;
+  albumImage: string | null;
   ownerIds: string[];
 }
 
@@ -75,6 +76,7 @@ export interface PublicRoom extends Omit<Room, "songPool" | "libraryByPlayer"> {
     previewUrl: string | null;
     name: string | null;
     artists: string[] | null;
+    albumImage: string | null;
     ownerNames: string[];
   } | null;
 }

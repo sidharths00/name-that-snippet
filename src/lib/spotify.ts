@@ -4,11 +4,22 @@ interface SpotifyArtist {
   name: string;
 }
 
+interface SpotifyImage {
+  url: string;
+  width: number | null;
+  height: number | null;
+}
+
+interface SpotifyAlbum {
+  images: SpotifyImage[];
+}
+
 interface SpotifyTrack {
   id: string;
   uri: string;
   name: string;
   artists: SpotifyArtist[];
+  album?: SpotifyAlbum;
   duration_ms: number;
   preview_url: string | null;
 }
@@ -47,9 +58,15 @@ export interface SimpleTrack {
   artists: string[];
   durationMs: number;
   previewUrl: string | null;
+  albumImage: string | null;
 }
 
 function toSimple(t: SpotifyTrack): SimpleTrack {
+  // Spotify returns album.images sorted largest first; pick a mid-size for the
+  // reveal screen (~300px) so we don't ship a 640x640 to every device.
+  const images = t.album?.images ?? [];
+  const mid = images.find((i) => (i.width ?? 0) <= 320 && (i.width ?? 0) >= 200) ??
+    images[images.length - 1] ?? null;
   return {
     id: t.id,
     uri: t.uri,
@@ -57,6 +74,7 @@ function toSimple(t: SpotifyTrack): SimpleTrack {
     artists: t.artists.map((a) => a.name),
     durationMs: t.duration_ms,
     previewUrl: t.preview_url,
+    albumImage: mid?.url ?? null,
   };
 }
 

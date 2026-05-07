@@ -19,6 +19,7 @@ function toTrack(t: SimpleTrack, ownerId: string): Track {
     artists: t.artists,
     durationMs: t.durationMs,
     previewUrl: t.previewUrl,
+    albumImage: t.albumImage,
     ownerIds: [ownerId],
   };
 }
@@ -119,6 +120,7 @@ export function publicRoom(room: Room, _viewerId: string | null): PublicRoom {
         previewUrl: track.previewUrl,
         name: reveal ? track.name : null,
         artists: reveal ? track.artists : null,
+        albumImage: reveal ? track.albumImage : null,
         ownerNames,
       };
     }

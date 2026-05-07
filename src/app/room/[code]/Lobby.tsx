@@ -46,16 +46,39 @@ export function Lobby({
     setTimeout(() => setCopied(false), 1500);
   }
 
+  async function shareCode() {
+    const url = `${window.location.origin}/room/${room.code}`;
+    const text = `Join my Name That Snippet game — code ${room.code}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: "Name That Snippet", text, url });
+        return;
+      } catch {
+        // User cancelled — fall through to clipboard.
+      }
+    }
+    await navigator.clipboard.writeText(`${text}\n${url}`);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }
+
+  const modeLabel =
+    room.settings.gameMode === "race"
+      ? "Race"
+      : room.settings.gameMode === "speed"
+        ? "Speed"
+        : "Turns";
+
   return (
-    <section className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-8 px-6 py-8 sm:px-10">
-      <div className="rounded-3xl border border-border bg-bg-elev p-6 text-center sm:p-8">
+    <section className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 px-4 py-6 sm:px-6 sm:gap-8 sm:py-8 sm:px-10">
+      <div className="rounded-3xl border border-border bg-bg-elev p-5 text-center sm:p-8">
         <p className="text-xs uppercase tracking-widest text-fg-muted">Room code</p>
         <button
           onClick={copyCode}
-          className="mt-2 flex w-full flex-col items-center gap-2 hover:opacity-80 sm:flex-row sm:justify-center sm:items-baseline sm:gap-3"
+          className="mt-2 flex w-full flex-col items-center gap-1 transition hover:opacity-80 active:scale-[0.99] sm:flex-row sm:justify-center sm:items-baseline sm:gap-3"
           aria-label="Copy room code"
         >
-          <span className="font-mono text-5xl font-black tracking-[0.2em] sm:text-7xl">
+          <span className="font-mono text-6xl font-black tracking-[0.18em] sm:text-7xl">
             {room.code}
           </span>
           <span className="text-xs font-medium text-fg-muted">
@@ -63,23 +86,26 @@ export function Lobby({
           </span>
         </button>
         <p className="mt-3 text-sm text-fg-muted">
-          Share with friends. They sign in at this site and tap{" "}
-          <span className="text-fg">Join</span>.
+          Friends sign in here and tap <span className="text-fg">Join</span>.
         </p>
+        <button
+          onClick={shareCode}
+          className="mt-4 inline-flex h-10 items-center gap-2 rounded-full border border-border bg-bg-elev-2 px-4 text-xs font-semibold transition hover:border-fg-muted"
+        >
+          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
+            <polyline points="16 6 12 2 8 6" />
+            <line x1="12" y1="2" x2="12" y2="15" />
+          </svg>
+          Share invite
+        </button>
       </div>
 
       <div className="grid grid-cols-2 gap-2 sm:gap-3">
-        <Stat
-          label="Mode"
-          value={room.settings.gameMode === "race" ? "Race" : "Turns"}
-        />
+        <Stat label="Mode" value={modeLabel} />
         <Stat
           label="Playback"
-          value={
-            room.settings.playbackMode === "host-only"
-              ? "Host plays"
-              : "Everyone plays"
-          }
+          value={room.settings.playbackMode === "host-only" ? "Host plays" : "Everyone plays"}
         />
         <Stat label="Rounds" value={`${room.settings.rounds}`} />
         <Stat label="Snippet" value={`${room.settings.snippetSeconds}s`} />
@@ -161,7 +187,8 @@ export function Lobby({
           {error && <p className="text-sm text-danger">{error}</p>}
         </div>
       ) : (
-        <p className="text-center text-sm text-fg-muted">
+        <p className="flex items-center justify-center gap-2 text-center text-sm text-fg-muted">
+          <span className="spinner" />
           Waiting for host to start…
         </p>
       )}
