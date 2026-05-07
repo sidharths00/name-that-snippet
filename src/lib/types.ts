@@ -61,6 +61,9 @@ export interface Room {
   // Per-player library samples gathered at join time. Server-only; stripped
   // from any payload sent to clients.
   libraryByPlayer: Record<string, Track[]>;
+  // TrackIds used in any prior game within this room — excluded from fresh
+  // song pools so a "Play again" doesn't repeat songs we just played.
+  usedTrackIds: string[];
   createdAt: number;
   updatedAt: number;
 }

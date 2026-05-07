@@ -7,12 +7,29 @@ import type { Viewer } from "./RoomClient";
 export function FinalScoreboard({
   room,
   viewer,
-  onAgain,
 }: {
   room: PublicRoom;
   viewer: Viewer;
-  onAgain: () => void;
 }) {
+  const [restarting, setRestarting] = useState(false);
+  const [restartErr, setRestartErr] = useState<string | null>(null);
+  const isHost = room.hostId === viewer.id;
+  async function restart() {
+    setRestarting(true);
+    setRestartErr(null);
+    try {
+      const res = await fetch(`/api/rooms/${room.code}/restart`, { method: "POST" });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error ?? "Couldn't restart");
+      }
+    } catch (err) {
+      setRestartErr(err instanceof Error ? err.message : "Couldn't restart");
+      setRestarting(false);
+    }
+    // On success the SSE event will swap the page back to GameView. No need
+    // to navigate.
+  }
   const sorted = useMemo(
     () => [...room.players].sort((a, b) => b.score - a.score),
     [room.players],
@@ -95,19 +112,29 @@ export function FinalScoreboard({
       )}
 
       <div className="flex flex-col items-center gap-3 sm:flex-row">
-        <button
-          onClick={onAgain}
-          className="h-12 rounded-full bg-accent px-8 text-sm font-semibold text-accent-fg transition hover:bg-accent-hover"
-        >
-          Play again
-        </button>
+        {isHost ? (
+          <button
+            onClick={restart}
+            disabled={restarting}
+            className="flex h-12 items-center justify-center gap-2 rounded-full bg-accent px-8 text-sm font-semibold text-accent-fg transition hover:bg-accent-hover disabled:opacity-50"
+          >
+            {restarting ? <span className="spinner" /> : "Play again — same room"}
+          </button>
+        ) : (
+          <p className="rounded-full border border-border bg-bg-elev px-5 py-3 text-sm text-fg-muted">
+            Waiting for host to start another round…
+          </p>
+        )}
         <a
           href="/"
           className="h-12 rounded-full border border-border bg-bg-elev px-6 text-sm font-semibold leading-[3rem] text-fg transition hover:border-fg-muted"
         >
-          Home
+          Leave room
         </a>
       </div>
+      {restartErr && (
+        <p className="text-sm text-danger">{restartErr}</p>
+      )}
     </section>
   );
 }

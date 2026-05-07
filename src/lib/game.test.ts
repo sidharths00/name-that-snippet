@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from "vitest";
 import { createRoom, joinRoom } from "./room";
-import { endRound, startGame, startNextRound, submitGuess } from "./game";
+import { endRound, finishGame, restartGame, startGame, startNextRound, submitGuess } from "./game";
 import type { Player } from "./types";
 import type { SimpleTrack } from "./spotify";
 
@@ -312,6 +312,83 @@ describe("game flow", () => {
     expect(shouldPlayFor("host-only", false)).toBe(false);
     expect(shouldPlayFor("everyone", true)).toBe(true);
     expect(shouldPlayFor("everyone", false)).toBe(true);
+  });
+
+  test("restartGame: preserves players, resets scores, excludes prior tracks", async () => {
+    // Build a library with enough tracks to cover two consecutive games
+    // without repeats.
+    const bigLib: SimpleTrack[] = Array.from({ length: 20 }, (_, i) =>
+      t(`x${i}`, `Track ${i}`, [`Artist ${i}`]),
+    );
+
+    let room = await createRoom(p("host", true), { rounds: 5 }, bigLib);
+    room = await joinRoom(room.code, p("alice"), bigLib);
+    room = await startGame(room);
+
+    // Play through all 5 rounds, scoring some points
+    for (let i = 0; i < 5; i++) {
+      room = await startNextRound(room);
+      const track = room.songPool.find((tt) => tt.id === room.rounds[i].trackId)!;
+      await submitGuess(room, "alice", `${track.name} ${track.artists[0]}`);
+    }
+    room = await finishGame(room);
+
+    // Capture trackIds from game 1
+    const game1Tracks = new Set(room.rounds.map((r) => r.trackId));
+    expect(game1Tracks.size).toBe(5);
+
+    const aliceScoreBefore = room.players.find((pl) => pl.id === "alice")!.score;
+    expect(aliceScoreBefore).toBeGreaterThan(0);
+
+    // Restart same room
+    room = await restartGame(room);
+    expect(room.status).toBe("in-round");
+    expect(room.players.length).toBe(2);
+    expect(room.players.find((pl) => pl.id === "alice")!.score).toBe(0);
+    expect(room.players.find((pl) => pl.id === "host")!.score).toBe(0);
+    expect(room.rounds.length).toBe(1);
+
+    // Game 2 should pick from a fresh pool
+    expect(room.songPool.length).toBe(5);
+    const game2Tracks = new Set(room.songPool.map((t) => t.id));
+    for (const id of game1Tracks) {
+      expect(game2Tracks.has(id)).toBe(false);
+    }
+  });
+
+  test("restartGame: falls back to allowing repeats when library is exhausted", async () => {
+    // Tiny library — only 5 tracks, but we play 5-round games. After game 1,
+    // there's nothing fresh, so game 2 should reuse them rather than fail.
+    let room = await createRoom(p("solo", true), { rounds: 5 }, TRACKS);
+    room = await startGame(room);
+    for (let i = 0; i < 5; i++) {
+      room = await startNextRound(room);
+    }
+    room = await finishGame(room);
+    room = await restartGame(room);
+    expect(room.status).toBe("in-round");
+    expect(room.songPool.length).toBe(TRACKS.length); // 5
+  });
+
+  test("usedTrackIds accumulates across multiple restarts", async () => {
+    const bigLib: SimpleTrack[] = Array.from({ length: 30 }, (_, i) =>
+      t(`x${i}`, `Track ${i}`, [`Artist ${i}`]),
+    );
+    let room = await createRoom(p("host", true), { rounds: 3 }, bigLib);
+    room = await startGame(room);
+    for (let i = 0; i < 3; i++) room = await startNextRound(room);
+    room = await finishGame(room);
+    const after1 = new Set(room.usedTrackIds);
+    // After first finish, usedTrackIds is still empty — gets populated on
+    // restart, not on finish.
+    expect(after1.size).toBe(0);
+
+    room = await restartGame(room);
+    expect(room.usedTrackIds.length).toBe(3); // game 1's tracks rolled in
+    for (let i = 0; i < 3; i++) room = await startNextRound(room);
+    room = await finishGame(room);
+    room = await restartGame(room);
+    expect(room.usedTrackIds.length).toBe(6); // games 1 + 2
   });
 
   test("game finishes after configured rounds", async () => {

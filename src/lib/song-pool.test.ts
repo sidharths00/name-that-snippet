@@ -126,4 +126,33 @@ describe("buildSongPool", () => {
       expect(t.ownerIds).toEqual(["A"]);
     }
   });
+
+  test("excludeTrackIds removes tracks from the pool", () => {
+    const a = player("A");
+    const lib = {
+      A: [
+        track("t1", "A"),
+        track("t2", "A"),
+        track("t3", "A"),
+        track("t4", "A"),
+        track("t5", "A"),
+      ],
+    };
+    const pool = buildSongPool([a], lib, 3, 0, ["t1", "t2"]);
+    const ids = pool.map((t) => t.id);
+    expect(ids).not.toContain("t1");
+    expect(ids).not.toContain("t2");
+    expect(pool.length).toBe(3);
+  });
+
+  test("falls back to allowing repeats when exclusion would leave too few tracks", () => {
+    const a = player("A");
+    const lib = {
+      A: [track("t1", "A"), track("t2", "A"), track("t3", "A")],
+    };
+    // Exclude all 3 — pool would be empty without fallback
+    const pool = buildSongPool([a], lib, 3, 0, ["t1", "t2", "t3"]);
+    // Falls back to full library
+    expect(pool.length).toBe(3);
+  });
 });

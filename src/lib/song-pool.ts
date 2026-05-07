@@ -14,11 +14,14 @@ export function buildSongPool(
   libraryByPlayer: Record<string, Track[]>,
   rounds: number,
   uniqueRatio: number,
+  excludeTrackIds: string[] = [],
 ): Track[] {
+  const exclude = new Set(excludeTrackIds);
   const merged = new Map<string, Track>();
   for (const p of players) {
     const lib = libraryByPlayer[p.id] ?? [];
     for (const t of lib) {
+      if (exclude.has(t.id)) continue;
       const existing = merged.get(t.id);
       if (existing) {
         if (!existing.ownerIds.includes(p.id)) existing.ownerIds.push(p.id);
@@ -28,7 +31,24 @@ export function buildSongPool(
     }
   }
 
-  const all = Array.from(merged.values());
+  let all = Array.from(merged.values());
+  // If excluding used tracks left us short, relax the exclusion. Better to
+  // allow some repeats than to deliver fewer rounds than the host configured.
+  if (all.length < rounds && exclude.size > 0) {
+    const fallbackMerged = new Map<string, Track>();
+    for (const p of players) {
+      const lib = libraryByPlayer[p.id] ?? [];
+      for (const t of lib) {
+        const existing = fallbackMerged.get(t.id);
+        if (existing) {
+          if (!existing.ownerIds.includes(p.id)) existing.ownerIds.push(p.id);
+        } else {
+          fallbackMerged.set(t.id, { ...t, ownerIds: [p.id] });
+        }
+      }
+    }
+    all = Array.from(fallbackMerged.values());
+  }
   const common = all.filter((t) => t.ownerIds.length >= 2);
   const unique = all.filter((t) => t.ownerIds.length === 1);
 

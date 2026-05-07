@@ -120,7 +120,7 @@ export function RoomClient({
 
   const view = useMemo(() => {
     if (room.status === "finished") {
-      return <FinalScoreboard room={room} viewer={viewer} onAgain={() => router.push("/host")} />;
+      return <FinalScoreboard room={room} viewer={viewer} />;
     }
     if (room.status === "lobby" || room.status === "loading-songs") {
       return <Lobby room={room} viewer={viewer} isHost={isHost} />;

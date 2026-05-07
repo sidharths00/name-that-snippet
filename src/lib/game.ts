@@ -18,6 +18,7 @@ export async function startGame(room: Room): Promise<Room> {
     room.libraryByPlayer,
     room.settings.rounds,
     room.settings.uniqueTrackRatio,
+    room.usedTrackIds ?? [],
   );
   if (room.songPool.length === 0) {
     throw new Error("Couldn't find any tracks across the players' libraries");
@@ -28,6 +29,28 @@ export async function startGame(room: Room): Promise<Room> {
   room.players = room.players.map((p) => ({ ...p, score: 0 }));
   room.updatedAt = Date.now();
   await persist(room);
+  return room;
+}
+
+// Restart the same room with the same settings + players. Songs from the
+// previous game(s) are excluded so we don't repeat. If the libraries don't
+// have enough fresh tracks, song-pool falls back to allowing repeats.
+export async function restartGame(room: Room): Promise<Room> {
+  // Roll up trackIds used in just-completed rounds into the cumulative list.
+  const justUsed = room.rounds.map((r) => r.trackId);
+  const merged = new Set([...(room.usedTrackIds ?? []), ...justUsed]);
+  room.usedTrackIds = Array.from(merged);
+
+  // Reset everything else for a fresh game in the same room.
+  room.status = "lobby";
+  room.songPool = [];
+  room.rounds = [];
+  room.players = room.players.map((p) => ({ ...p, score: 0 }));
+  room.updatedAt = Date.now();
+  await persist(room);
+
+  await startGame(room);
+  await startNextRound(room);
   return room;
 }
 

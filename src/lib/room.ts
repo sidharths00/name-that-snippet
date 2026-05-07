@@ -49,6 +49,7 @@ export async function createRoom(
     songPool: [],
     rounds: [],
     libraryByPlayer: { [host.id]: hostLibrary.map((t) => toTrack(t, host.id)) },
+    usedTrackIds: [],
     createdAt: now,
     updatedAt: now,
   };
