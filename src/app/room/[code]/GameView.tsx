@@ -26,7 +26,18 @@ export function GameView({
   const shouldPlay = playback.shouldPlay;
 
   const playedTrackIdRef = useRef<string | null>(null);
+  const playedEngineRef = useRef<typeof playback.engine>(null);
   const [needsTap, setNeedsTap] = useState(false);
+
+  // Retry play if the engine changes mid-round (e.g., SDK becomes ready
+  // after we already started with preview).
+  useEffect(() => {
+    if (playedEngineRef.current && playedEngineRef.current !== playback.engine) {
+      playedTrackIdRef.current = null;
+    }
+    playedEngineRef.current = playback.engine;
+  }, [playback.engine]);
+
   useEffect(() => {
     if (!shouldPlay || !track || !inRound) return;
     if (playback.status !== "ready") return;
@@ -35,22 +46,30 @@ export function GameView({
     setNeedsTap(false);
     playback.play({ uri: track.uri, previewUrl: track.previewUrl }, DEFAULT_START_OFFSET_MS).then(
       (ok) => {
-        if (!ok) setNeedsTap(true);
+        if (ok) return;
+        // Only useful to show tap-to-play if there's actually something
+        // tappable to start (preview engine + preview URL exists).
+        if (playback.engine === "preview" && track.previewUrl) setNeedsTap(true);
       },
       (err) => {
         console.error("[playback] play failed", err);
-        setNeedsTap(true);
+        if (playback.engine === "preview" && track.previewUrl) setNeedsTap(true);
       },
     );
   }, [shouldPlay, track, inRound, playback]);
 
   async function tapToPlay() {
     if (!track) return;
+    // Bypass the "already played" guard — user just gave a fresh gesture.
+    playedTrackIdRef.current = null;
     const ok = await playback.play(
       { uri: track.uri, previewUrl: track.previewUrl },
       DEFAULT_START_OFFSET_MS,
     );
-    if (ok) setNeedsTap(false);
+    if (ok) {
+      setNeedsTap(false);
+      playedTrackIdRef.current = track.id;
+    }
   }
 
   useEffect(() => {
@@ -79,6 +98,46 @@ export function GameView({
     }, remainingMs);
     return () => clearTimeout(id);
   }, [shouldPlay, inRound, round?.startedAt, room.settings.snippetSeconds, playback]);
+
+  // Auto-end the round when the snippet timer expires. Runs only on the host
+  // so multiple clients don't race to call /round?action=end. Race + Speed
+  // only — turn-based is host-scored manually.
+  useEffect(() => {
+    if (!isHost || !inRound) return;
+    if (room.settings.gameMode === "turns") return;
+    const startedAt = round?.startedAt ?? null;
+    if (!startedAt) return;
+    // Wait an extra second after the snippet ends to let any in-flight final
+    // guess be judged before we close the round.
+    const expireAt = startedAt + room.settings.snippetSeconds * 1000 + 1000;
+    const remaining = expireAt - Date.now();
+    if (remaining <= 0) {
+      fetch(`/api/rooms/${room.code}/round?action=end`, { method: "POST" }).catch(() => {});
+      return;
+    }
+    const id = setTimeout(() => {
+      fetch(`/api/rooms/${room.code}/round?action=end`, { method: "POST" }).catch(() => {});
+    }, remaining);
+    return () => clearTimeout(id);
+  }, [
+    isHost,
+    inRound,
+    round?.startedAt,
+    room.settings.snippetSeconds,
+    room.settings.gameMode,
+    room.code,
+  ]);
+
+  // Auto-advance from the round-result reveal to the next round after a few
+  // seconds, so the host doesn't have to click Next every round. The host
+  // can still hit the button to advance early.
+  useEffect(() => {
+    if (!isHost || !inResult) return;
+    const id = setTimeout(() => {
+      fetch(`/api/rooms/${room.code}/round`, { method: "POST" }).catch(() => {});
+    }, 5000);
+    return () => clearTimeout(id);
+  }, [isHost, inResult, room.code]);
 
   return (
     <section className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-5 px-4 pb-10 pt-2 sm:px-6 sm:gap-6 sm:px-10">

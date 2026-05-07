@@ -9,14 +9,11 @@ function shuffle<T>(arr: T[]): T[] {
   return out;
 }
 
-export function buildSongPool(
+function mergeOwnership(
   players: Player[],
   libraryByPlayer: Record<string, Track[]>,
-  rounds: number,
-  uniqueRatio: number,
-  excludeTrackIds: string[] = [],
+  exclude: Set<string>,
 ): Track[] {
-  const exclude = new Set(excludeTrackIds);
   const merged = new Map<string, Track>();
   for (const p of players) {
     const lib = libraryByPlayer[p.id] ?? [];
@@ -30,46 +27,62 @@ export function buildSongPool(
       }
     }
   }
+  return Array.from(merged.values());
+}
 
-  let all = Array.from(merged.values());
-  // If excluding used tracks left us short, relax the exclusion. Better to
-  // allow some repeats than to deliver fewer rounds than the host configured.
+export function buildSongPool(
+  players: Player[],
+  libraryByPlayer: Record<string, Track[]>,
+  rounds: number,
+  _uniqueRatio: number, // legacy param, ignored — fairness algo replaces it
+  excludeTrackIds: string[] = [],
+): Track[] {
+  let exclude = new Set(excludeTrackIds);
+  let all = mergeOwnership(players, libraryByPlayer, exclude);
+
+  // Fallback: if excluding leaves the merged set too small, drop the
+  // exclusions so the game still has something to play.
   if (all.length < rounds && exclude.size > 0) {
-    const fallbackMerged = new Map<string, Track>();
-    for (const p of players) {
-      const lib = libraryByPlayer[p.id] ?? [];
-      for (const t of lib) {
-        const existing = fallbackMerged.get(t.id);
-        if (existing) {
-          if (!existing.ownerIds.includes(p.id)) existing.ownerIds.push(p.id);
-        } else {
-          fallbackMerged.set(t.id, { ...t, ownerIds: [p.id] });
-        }
-      }
+    exclude = new Set();
+    all = mergeOwnership(players, libraryByPlayer, exclude);
+  }
+
+  if (all.length === 0) return [];
+
+  // Fairness pass: round-robin through players guaranteeing each one gets a
+  // proportional slice of the pool. Within each player's allotment we prefer
+  // tracks that overlap with other players (more recognizable for the room),
+  // falling back to that player's solo tracks.
+  const minPerPlayer = Math.max(1, Math.floor(rounds / Math.max(players.length, 1)));
+  const picked = new Map<string, Track>();
+  for (const p of players) {
+    const mine = all.filter((t) => t.ownerIds.includes(p.id) && !picked.has(t.id));
+    // Prefer commons (multi-owner) first — more interesting trivia.
+    const ordered = [
+      ...shuffle(mine.filter((t) => t.ownerIds.length >= 2)),
+      ...shuffle(mine.filter((t) => t.ownerIds.length === 1)),
+    ];
+    let added = 0;
+    for (const t of ordered) {
+      if (added >= minPerPlayer) break;
+      if (picked.has(t.id)) continue;
+      picked.set(t.id, t);
+      added++;
     }
-    all = Array.from(fallbackMerged.values());
-  }
-  const common = all.filter((t) => t.ownerIds.length >= 2);
-  const unique = all.filter((t) => t.ownerIds.length === 1);
-
-  const targetUnique = Math.min(unique.length, Math.round(rounds * uniqueRatio));
-  const targetCommon = Math.max(0, rounds - targetUnique);
-
-  const picks: Track[] = [
-    ...shuffle(common).slice(0, targetCommon),
-    ...shuffle(unique).slice(0, targetUnique),
-  ];
-
-  // If we still don't have enough (small libraries / no overlap), pad from
-  // whatever's left.
-  if (picks.length < rounds) {
-    const used = new Set(picks.map((p) => p.id));
-    const leftover = shuffle(all.filter((t) => !used.has(t.id))).slice(
-      0,
-      rounds - picks.length,
-    );
-    picks.push(...leftover);
   }
 
-  return shuffle(picks).slice(0, rounds);
+  // Fill remaining slots from whatever's left, preferring common tracks.
+  if (picked.size < rounds) {
+    const remaining = all.filter((t) => !picked.has(t.id));
+    const ordered = [
+      ...shuffle(remaining.filter((t) => t.ownerIds.length >= 2)),
+      ...shuffle(remaining.filter((t) => t.ownerIds.length === 1)),
+    ];
+    for (const t of ordered) {
+      if (picked.size >= rounds) break;
+      picked.set(t.id, t);
+    }
+  }
+
+  return shuffle(Array.from(picked.values())).slice(0, rounds);
 }

@@ -69,23 +69,24 @@ describe("buildSongPool", () => {
     expect(pool.filter((t) => t.ownerIds.length === 2).length).toBe(1);
   });
 
-  test("respects uniqueRatio", () => {
+  test("prefers common (multi-owner) tracks when available", () => {
     const a = player("A");
     const b = player("B");
     const lib = {
-      A: Array.from({ length: 20 }, (_, i) => track(`s${i}`, "A")),
-      B: Array.from({ length: 20 }, (_, i) => track(`s${i}`, "B")),
+      A: [
+        ...Array.from({ length: 20 }, (_, i) => track(`s${i}`, "A")),
+        ...Array.from({ length: 10 }, (_, i) => track(`uA${i}`, "A")),
+      ],
+      B: [
+        ...Array.from({ length: 20 }, (_, i) => track(`s${i}`, "B")),
+        ...Array.from({ length: 10 }, (_, i) => track(`uB${i}`, "B")),
+      ],
     };
-    // Add unique tracks
-    lib.A.push(...Array.from({ length: 10 }, (_, i) => track(`u${i}`, "A")));
-    lib.B.push(...Array.from({ length: 10 }, (_, i) => track(`v${i}`, "B")));
-
-    const pool = buildSongPool([a, b], lib, 10, 0.2);
+    const pool = buildSongPool([a, b], lib, 10, 0);
     expect(pool.length).toBe(10);
     const common = pool.filter((t) => t.ownerIds.length === 2);
-    const unique = pool.filter((t) => t.ownerIds.length === 1);
-    expect(unique.length).toBe(2); // 10 * 0.2
-    expect(common.length).toBe(8);
+    // With 20 common tracks available, the pool should lean heavily common.
+    expect(common.length).toBeGreaterThanOrEqual(8);
   });
 
   test("merges ownerIds across players", () => {
@@ -154,5 +155,72 @@ describe("buildSongPool", () => {
     const pool = buildSongPool([a], lib, 3, 0, ["t1", "t2", "t3"]);
     // Falls back to full library
     expect(pool.length).toBe(3);
+  });
+
+  test("3 players, one with zero overlap: every player is represented", () => {
+    const a = player("A");
+    const b = player("B");
+    const c = player("C");
+    const lib = {
+      // A and B share 5 tracks. C has 5 totally separate tracks.
+      A: [
+        track("s1", "A"),
+        track("s2", "A"),
+        track("s3", "A"),
+        track("s4", "A"),
+        track("s5", "A"),
+      ],
+      B: [
+        track("s1", "B"),
+        track("s2", "B"),
+        track("s3", "B"),
+        track("s4", "B"),
+        track("s5", "B"),
+      ],
+      C: [
+        track("c1", "C"),
+        track("c2", "C"),
+        track("c3", "C"),
+        track("c4", "C"),
+        track("c5", "C"),
+      ],
+    };
+    // Repeat several times — fairness shouldn't depend on luck.
+    for (let trial = 0; trial < 20; trial++) {
+      const pool = buildSongPool([a, b, c], lib, 9, 0);
+      expect(pool.length).toBe(9);
+      const cTracks = pool.filter((t) => t.ownerIds.includes("C"));
+      // Min per player = floor(9/3) = 3 — C must always have at least 3.
+      expect(cTracks.length).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  test("4 players: each gets at least floor(rounds/players) tracks", () => {
+    const players = ["A", "B", "C", "D"].map((id) => player(id));
+    const lib: Record<string, ReturnType<typeof track>[]> = {};
+    for (const p of players) {
+      lib[p.id] = Array.from({ length: 8 }, (_, i) => track(`${p.id}${i}`, p.id));
+    }
+    const pool = buildSongPool(players, lib, 12, 0);
+    expect(pool.length).toBe(12);
+    for (const p of players) {
+      const owned = pool.filter((t) => t.ownerIds.includes(p.id));
+      expect(owned.length).toBeGreaterThanOrEqual(3); // floor(12/4)
+    }
+  });
+
+  test("if a player's library is empty, others fill in", () => {
+    const a = player("A");
+    const b = player("B");
+    const lib = {
+      A: Array.from({ length: 10 }, (_, i) => track(`a${i}`, "A")),
+      B: [], // empty library (e.g., new Spotify account)
+    };
+    const pool = buildSongPool([a, b], lib, 5, 0);
+    expect(pool.length).toBe(5);
+    // All from A
+    for (const t of pool) {
+      expect(t.ownerIds).toContain("A");
+    }
   });
 });
