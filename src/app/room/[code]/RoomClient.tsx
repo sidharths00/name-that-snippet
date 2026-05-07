@@ -114,14 +114,9 @@ export function RoomClient({
     }
   }, [room.code]);
 
-  // Best-effort leave on tab close (avoids ghost players in the lobby).
-  useEffect(() => {
-    function leave() {
-      navigator.sendBeacon(`/api/rooms/${room.code}/leave`);
-    }
-    window.addEventListener("beforeunload", leave);
-    return () => window.removeEventListener("beforeunload", leave);
-  }, [room.code]);
+  // Note: we deliberately do NOT auto-leave on tab close. beforeunload fires
+  // on reload too, and a reload that deletes your own room (when you're the
+  // last in it) makes the page 404 itself. Rooms expire via TTL instead.
 
   const view = useMemo(() => {
     if (room.status === "finished") {
