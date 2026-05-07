@@ -62,6 +62,24 @@ export function GameView({
     }
   }, [inResult, inRound, shouldPlay, playback, room.status]);
 
+  // Hard cutoff: pause audio once the snippet duration elapses, even if the
+  // round (server-side) is still open. Otherwise the SDK keeps playing the
+  // full track past the timer.
+  useEffect(() => {
+    if (!shouldPlay || !inRound) return;
+    const startedAt = round?.startedAt ?? null;
+    if (!startedAt) return;
+    const remainingMs = room.settings.snippetSeconds * 1000 - (Date.now() - startedAt);
+    if (remainingMs <= 0) {
+      playback.pause().catch(() => {});
+      return;
+    }
+    const id = setTimeout(() => {
+      playback.pause().catch(() => {});
+    }, remainingMs);
+    return () => clearTimeout(id);
+  }, [shouldPlay, inRound, round?.startedAt, room.settings.snippetSeconds, playback]);
+
   return (
     <section className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-5 px-4 pb-10 pt-2 sm:px-6 sm:gap-6 sm:px-10">
       <RoundHeader room={room} viewer={viewer} />
