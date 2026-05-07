@@ -48,15 +48,17 @@ export function Lobby({
 
   return (
     <section className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-8 px-6 py-8 sm:px-10">
-      <div className="rounded-3xl border border-border bg-bg-elev p-8 text-center">
+      <div className="rounded-3xl border border-border bg-bg-elev p-6 text-center sm:p-8">
         <p className="text-xs uppercase tracking-widest text-fg-muted">Room code</p>
         <button
           onClick={copyCode}
-          className="mt-2 inline-flex items-baseline gap-3 font-mono text-6xl font-black tracking-[0.2em] hover:opacity-80 sm:text-7xl"
+          className="mt-2 flex w-full flex-col items-center gap-2 hover:opacity-80 sm:flex-row sm:justify-center sm:items-baseline sm:gap-3"
           aria-label="Copy room code"
         >
-          {room.code}
-          <span className="text-xs font-sans font-medium normal-case tracking-normal text-fg-muted">
+          <span className="font-mono text-5xl font-black tracking-[0.2em] sm:text-7xl">
+            {room.code}
+          </span>
+          <span className="text-xs font-medium text-fg-muted">
             {copied ? "copied!" : "tap to copy"}
           </span>
         </button>
@@ -66,16 +68,16 @@ export function Lobby({
         </p>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-2 gap-2 sm:gap-3">
         <Stat
           label="Mode"
-          value={room.settings.gameMode === "race" ? "Race" : "Turn-based"}
+          value={room.settings.gameMode === "race" ? "Race" : "Turns"}
         />
         <Stat
           label="Playback"
           value={
             room.settings.playbackMode === "host-only"
-              ? "Host plays on speaker"
+              ? "Host plays"
               : "Everyone plays"
           }
         />

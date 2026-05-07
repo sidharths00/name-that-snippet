@@ -243,7 +243,11 @@ function GuessInput({
           autoFocus
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Type the title or the artist…"
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
+          placeholder="Title or artist…"
           className="h-12 flex-1 rounded-full border border-border bg-bg-elev px-5 text-base outline-none focus:border-accent"
         />
         <button
@@ -427,26 +431,28 @@ function NextRoundButton({ room }: { room: PublicRoom }) {
 
 function Scoreboard({ room, viewer }: { room: PublicRoom; viewer: Viewer }) {
   const sorted = [...room.players].sort((a, b) => b.score - a.score);
+  // On mobile the scoreboard goes ABOVE the round (order-first) so the player
+  // sees their score at a glance without scrolling past the playback card.
   return (
-    <aside className="space-y-3 rounded-3xl border border-border bg-bg-elev p-5 lg:sticky lg:top-4 lg:self-start">
-      <p className="text-xs font-semibold uppercase tracking-widest text-fg-muted">
+    <aside className="order-first space-y-2 rounded-2xl border border-border bg-bg-elev p-3 sm:p-4 lg:order-none lg:sticky lg:top-4 lg:self-start lg:p-5">
+      <p className="text-[10px] font-semibold uppercase tracking-widest text-fg-muted sm:text-xs">
         Scoreboard
       </p>
-      <ul className="space-y-2">
+      <ul className="space-y-1.5 sm:space-y-2">
         {sorted.map((p, i) => (
           <li
             key={p.id}
-            className={`flex items-center justify-between rounded-xl px-3 py-2 ${
+            className={`flex items-center justify-between rounded-lg px-2.5 py-1.5 sm:rounded-xl sm:px-3 sm:py-2 ${
               p.id === viewer.id ? "bg-accent/10" : "bg-bg-elev-2/60"
             }`}
           >
-            <div className="flex items-center gap-2">
-              <span className="w-4 text-center font-mono text-xs text-fg-muted">
+            <div className="flex items-center gap-2 truncate">
+              <span className="w-4 shrink-0 text-center font-mono text-xs text-fg-muted">
                 {i + 1}
               </span>
-              <span className="text-sm font-semibold">{p.name}</span>
+              <span className="truncate text-sm font-semibold">{p.name}</span>
             </div>
-            <span className="font-mono text-base font-black">{p.score}</span>
+            <span className="ml-2 shrink-0 font-mono text-base font-black">{p.score}</span>
           </li>
         ))}
       </ul>

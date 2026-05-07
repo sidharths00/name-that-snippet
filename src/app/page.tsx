@@ -42,12 +42,12 @@ export default async function HomePage() {
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-accent">
             the music guessing game
           </p>
-          <h1 className="text-balance text-5xl font-black leading-[1.05] tracking-tight sm:text-7xl">
+          <h1 className="text-balance text-4xl font-black leading-[1.05] tracking-tight sm:text-6xl md:text-7xl">
             Race to name
             <br />
             the song.
           </h1>
-          <p className="mx-auto max-w-xl text-balance text-base text-fg-muted sm:text-lg">
+          <p className="mx-auto max-w-xl text-balance text-sm text-fg-muted sm:text-base md:text-lg">
             Pull songs from your shared libraries and battle your friends to
             guess title and artist first. IRL on a speaker, or remote on every phone.
           </p>
@@ -99,7 +99,7 @@ export default async function HomePage() {
             </div>
 
             <div className="rounded-2xl border border-border bg-bg-elev/60 p-5">
-              <div className="flex items-center justify-between gap-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="text-sm font-bold">Just yourself?</p>
                   <p className="text-xs text-fg-muted">

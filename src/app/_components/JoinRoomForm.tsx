@@ -39,14 +39,17 @@ export function JoinRoomForm() {
           onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
           maxLength={4}
           autoComplete="off"
+          autoCapitalize="characters"
+          autoCorrect="off"
           spellCheck={false}
+          inputMode="text"
           placeholder="CODE"
-          className="h-10 flex-1 rounded-full border border-border bg-bg-elev-2 px-4 text-center font-mono text-base font-bold tracking-[0.4em] uppercase outline-none placeholder:text-fg-muted/50 focus:border-accent"
+          className="h-12 flex-1 rounded-full border border-border bg-bg-elev-2 px-4 text-center font-mono text-lg font-bold tracking-[0.3em] uppercase outline-none placeholder:text-fg-muted/50 focus:border-accent sm:tracking-[0.4em]"
         />
         <button
           type="submit"
           disabled={submitting || code.length < 4}
-          className="h-10 rounded-full bg-fg px-5 text-xs font-semibold text-bg transition hover:bg-fg/90"
+          className="h-12 rounded-full bg-fg px-6 text-sm font-semibold text-bg transition hover:bg-fg/90 disabled:opacity-50"
         >
           {submitting ? "…" : "Join"}
         </button>

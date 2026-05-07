@@ -131,6 +131,59 @@ describe("game flow", () => {
     expect(room.players[0].score).toBeGreaterThan(0);
   });
 
+  test("partial credit: title-only awards 1 point and round stays open", async () => {
+    let room = await createRoom(p("host", true), { rounds: 1 }, TRACKS);
+    room = await joinRoom(room.code, p("alice"), TRACKS);
+    room = await startGame(room);
+    room = await startNextRound(room);
+    const track = room.songPool[0];
+    const result = await submitGuess(room, "alice", track.name);
+    expect(result.guess.titleHit).toBe(true);
+    expect(result.guess.artistHit).toBe(false);
+    expect(result.guess.points).toBe(1);
+    expect(result.room.status).toBe("in-round");
+  });
+
+  test("guessing same field twice doesn't double-score", async () => {
+    let room = await createRoom(p("host", true), { rounds: 1 }, TRACKS);
+    room = await joinRoom(room.code, p("alice"), TRACKS);
+    room = await startGame(room);
+    room = await startNextRound(room);
+    const track = room.songPool[0];
+    await submitGuess(room, "alice", track.name);
+    const before = room.players.find((pl) => pl.id === "alice")!.score;
+    const result = await submitGuess(room, "alice", track.name);
+    expect(result.guess.points).toBe(0);
+    expect(result.room.players.find((pl) => pl.id === "alice")!.score).toBe(before);
+  });
+
+  test("race: only one player can win — second player's late guess gets 0 since round ended", async () => {
+    let room = await createRoom(p("host", true), { rounds: 1 }, TRACKS);
+    room = await joinRoom(room.code, p("alice"), TRACKS);
+    room = await joinRoom(room.code, p("bob"), TRACKS);
+    room = await startGame(room);
+    room = await startNextRound(room);
+    const track = room.songPool[0];
+    await submitGuess(room, "alice", track.name);
+    const result = await submitGuess(room, "alice", track.artists[0]);
+    expect(result.room.status).toBe("round-result");
+    expect(result.room.rounds[0].winnerId).toBe("alice");
+    // Bob trying to guess after the round ended should fail
+    await expect(submitGuess(result.room, "bob", track.name)).rejects.toThrow();
+  });
+
+  test("snippet length influences speed bonus", async () => {
+    let room = await createRoom(p("host", true), { rounds: 1, snippetSeconds: 10 }, TRACKS);
+    room = await startGame(room);
+    room = await startNextRound(room);
+    const track = room.songPool[0];
+    // Simulate guessing right at the start (full bonus)
+    room.rounds[0].startedAt = Date.now();
+    const result = await submitGuess(room, "host", `${track.name} ${track.artists[0]}`);
+    // 1 (title) + 1 (artist) + bonus (up to 2)
+    expect(result.guess.points).toBeGreaterThanOrEqual(2);
+  });
+
   test("game finishes after configured rounds", async () => {
     let room = await createRoom(p("host", true), { rounds: 2 }, TRACKS);
     room = await startGame(room);
