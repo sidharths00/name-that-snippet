@@ -1,0 +1,85 @@
+import { describe, expect, test } from "vitest";
+import { judgeGuess, normalize } from "./match";
+
+describe("normalize", () => {
+  test("strips parentheticals", () => {
+    expect(normalize("Bohemian Rhapsody (Remastered 2011)")).toBe("bohemian rhapsody");
+  });
+  test("strips feat", () => {
+    expect(normalize("Stay (with Justin Bieber)")).toBe("stay");
+    expect(normalize("Old Town Road feat. Billy Ray Cyrus")).toBe("old town road");
+  });
+  test("expands ampersand", () => {
+    expect(normalize("Simon & Garfunkel")).toBe("simon and garfunkel");
+  });
+  test("removes punctuation", () => {
+    expect(normalize("Don't Stop Believin'")).toBe("dont stop believin");
+  });
+  test("normalizes diacritics", () => {
+    expect(normalize("Beyoncé")).toBe("beyonce");
+  });
+});
+
+describe("judgeGuess: title hits", () => {
+  test("exact title", () => {
+    const r = judgeGuess("Mr. Brightside", "Mr. Brightside", ["The Killers"]);
+    expect(r.titleHit).toBe(true);
+    expect(r.artistHit).toBe(false);
+  });
+  test("case + punctuation insensitive", () => {
+    const r = judgeGuess("mr brightside", "Mr. Brightside", ["The Killers"]);
+    expect(r.titleHit).toBe(true);
+  });
+  test("ignores remaster suffix", () => {
+    const r = judgeGuess("bohemian rhapsody", "Bohemian Rhapsody - Remastered 2011", ["Queen"]);
+    expect(r.titleHit).toBe(true);
+  });
+  test("ignores feat", () => {
+    const r = judgeGuess("stay", "Stay (with Justin Bieber)", ["The Kid LAROI", "Justin Bieber"]);
+    expect(r.titleHit).toBe(true);
+  });
+  test("rejects wrong title", () => {
+    const r = judgeGuess("hello darkness", "Mr. Brightside", ["The Killers"]);
+    expect(r.titleHit).toBe(false);
+  });
+});
+
+describe("judgeGuess: artist hits", () => {
+  test("exact artist", () => {
+    const r = judgeGuess("The Killers", "Mr. Brightside", ["The Killers"]);
+    expect(r.artistHit).toBe(true);
+  });
+  test("partial artist match", () => {
+    const r = judgeGuess("killers", "Mr. Brightside", ["The Killers"]);
+    expect(r.artistHit).toBe(true);
+  });
+  test("matches secondary artist", () => {
+    const r = judgeGuess("justin bieber", "Stay", ["The Kid LAROI", "Justin Bieber"]);
+    expect(r.artistHit).toBe(true);
+  });
+  test("rejects wrong artist", () => {
+    const r = judgeGuess("coldplay", "Mr. Brightside", ["The Killers"]);
+    expect(r.artistHit).toBe(false);
+  });
+});
+
+describe("judgeGuess: edge cases", () => {
+  test("empty guess", () => {
+    const r = judgeGuess("", "Mr. Brightside", ["The Killers"]);
+    expect(r).toEqual({ titleHit: false, artistHit: false });
+  });
+  test("whitespace only", () => {
+    const r = judgeGuess("   ", "Mr. Brightside", ["The Killers"]);
+    expect(r.titleHit).toBe(false);
+    expect(r.artistHit).toBe(false);
+  });
+  test("guess containing both title and artist hits both", () => {
+    const r = judgeGuess(
+      "mr brightside the killers",
+      "Mr. Brightside",
+      ["The Killers"],
+    );
+    expect(r.titleHit).toBe(true);
+    expect(r.artistHit).toBe(true);
+  });
+});
