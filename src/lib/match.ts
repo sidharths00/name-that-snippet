@@ -108,13 +108,36 @@ function targetCovered(guess: string[], target: string[]): boolean {
   return hit / target.length >= 0.8;
 }
 
+// Pull out parenthetical content as candidate alt titles. Songs often have
+// the actually-recognizable name in parens (e.g., "What If You Fly (Sweet
+// Disposition)"). Skip parens that are obviously feat/with annotations.
+const PAREN_CONTENT = /\(([^)]+)\)|\[([^\]]+)\]/g;
+const FEAT_PARENS = /^\s*(feat\.?|featuring|ft\.?|with|w\/)\b/i;
+
+function altTitles(target: string): string[] {
+  const out: string[] = [];
+  for (const m of target.matchAll(PAREN_CONTENT)) {
+    const inner = (m[1] ?? m[2] ?? "").trim();
+    if (inner && !FEAT_PARENS.test(inner)) out.push(inner);
+  }
+  return out;
+}
+
 function fullMatch(guess: string, target: string): boolean {
   const g = tokens(guess);
+  if (g.length === 0) return false;
+  // Try the main (parens-stripped) form first.
   const t = tokens(target);
-  if (g.length === 0 || t.length === 0) return false;
-  // Either: every guess token is in the target (lenient — "stay" matches
-  // "stay with me"), OR the guess covers most of the target.
-  return tokenCover(g, t) >= 0.65 || targetCovered(g, t);
+  if (t.length > 0 && (tokenCover(g, t) >= 0.65 || targetCovered(g, t))) {
+    return true;
+  }
+  // Then try each parenthetical as a candidate alt title.
+  for (const alt of altTitles(target)) {
+    const at = tokens(alt);
+    if (at.length === 0) continue;
+    if (tokenCover(g, at) >= 0.65 || targetCovered(g, at)) return true;
+  }
+  return false;
 }
 
 export interface JudgeResult {

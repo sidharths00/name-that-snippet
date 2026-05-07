@@ -94,6 +94,34 @@ describe("judgeGuess: stopwords", () => {
   });
 });
 
+describe("judgeGuess: parenthetical alt titles", () => {
+  test("matches the parenthetical when it's the recognizable name", () => {
+    const r = judgeGuess(
+      "sweet disposition",
+      "What If You Fly (Sweet Disposition)",
+      ["Some Artist"],
+    );
+    expect(r.titleHit).toBe(true);
+  });
+  test("still matches the main title", () => {
+    const r = judgeGuess(
+      "what if you fly",
+      "What If You Fly (Sweet Disposition)",
+      ["Some Artist"],
+    );
+    expect(r.titleHit).toBe(true);
+  });
+  test("doesn't accept feat-style parens as a title", () => {
+    // "with justin bieber" inside parens shouldn't count as a title hit
+    const r = judgeGuess(
+      "with justin bieber",
+      "Stay (with Justin Bieber)",
+      ["The Kid LAROI", "Justin Bieber"],
+    );
+    expect(r.titleHit).toBe(false);
+  });
+});
+
 describe("judgeGuess: dash suffix stripping", () => {
   test("strips ' - 2011 Mix' style suffix", () => {
     const r = judgeGuess("bohemian rhapsody", "Bohemian Rhapsody - 2011 Mix", ["Queen"]);
