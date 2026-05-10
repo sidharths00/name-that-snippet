@@ -4,9 +4,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 const SDK_SRC = "https://sdk.scdn.co/spotify-player.js";
 const SDK_READY_TIMEOUT_MS = 12_000;
+const MAX_LOG_ENTRIES = 25;
 
 export type PlaybackStatus = "idle" | "loading" | "ready" | "error";
 export type PlaybackEngine = "sdk" | "preview" | null;
+
+export interface PlaybackLogEntry {
+  at: number;
+  level: "info" | "warn" | "error";
+  source: "sdk" | "preview" | "token" | "play" | "init";
+  message: string;
+}
 
 interface UsePlaybackOptions {
   enabled: boolean;
@@ -23,14 +31,20 @@ interface UsePlaybackResult {
   engine: PlaybackEngine;
   deviceId: string | null;
   error: string | null;
+  log: PlaybackLogEntry[];
   /** Returns true if audio actually started, false if no playable source. */
   play: (target: PlayTarget, positionMs?: number) => Promise<boolean>;
   pause: () => Promise<void>;
+  /** Force a fresh SDK init pass (useful when something is stuck). */
+  retry: () => void;
 }
 
 async function getAccessToken(): Promise<string> {
   const res = await fetch("/api/spotify/token", { cache: "no-store" });
-  if (!res.ok) throw new Error("Couldn't load Spotify token");
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Spotify token endpoint ${res.status}${body ? `: ${body}` : ""}`);
+  }
   const { accessToken } = (await res.json()) as { accessToken: string };
   return accessToken;
 }
@@ -39,7 +53,6 @@ function isiOS(): boolean {
   if (typeof navigator === "undefined") return false;
   const ua = navigator.userAgent;
   return /iPhone|iPad|iPod/.test(ua) ||
-    // iPadOS 13+ reports as Mac with touch support
     (navigator.platform === "MacIntel" && (navigator.maxTouchPoints ?? 0) > 1);
 }
 
@@ -60,7 +73,7 @@ function loadSdk(): Promise<void> {
     const script = document.createElement("script");
     script.src = SDK_SRC;
     script.async = true;
-    script.onerror = () => reject(new Error("Failed to load Spotify SDK"));
+    script.onerror = () => reject(new Error("Failed to load Spotify SDK script"));
     document.body.appendChild(script);
   });
 }
@@ -70,21 +83,38 @@ export function usePlayback({ enabled, name }: UsePlaybackOptions): UsePlaybackR
   const [engine, setEngine] = useState<PlaybackEngine>(null);
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [log, setLog] = useState<PlaybackLogEntry[]>([]);
+  const [retryNonce, setRetryNonce] = useState(0);
 
   const playerRef = useRef<SpotifyPlayer | null>(null);
   const tokenRef = useRef<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  // iOS Safari can't run the Web Playback SDK reliably. Skip it entirely and
-  // use the preview-MP3 fallback. On other platforms we attempt the SDK first
-  // and fall through to preview if it fails or doesn't go ready in time.
   const skipSdk = isiOS();
+
+  const appendLog = useCallback((entry: Omit<PlaybackLogEntry, "at">) => {
+    setLog((prev) => {
+      const next = [...prev, { ...entry, at: Date.now() }];
+      return next.length > MAX_LOG_ENTRIES ? next.slice(-MAX_LOG_ENTRIES) : next;
+    });
+    const tag = `[playback:${entry.source}]`;
+    if (entry.level === "error") console.error(tag, entry.message);
+    else if (entry.level === "warn") console.warn(tag, entry.message);
+    else console.log(tag, entry.message);
+  }, []);
+
+  const retry = useCallback(() => {
+    setError(null);
+    setEngine(null);
+    setDeviceId(null);
+    setStatus("idle");
+    setRetryNonce((n) => n + 1);
+  }, []);
 
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
 
-    // Always have an <audio> element available as the fallback engine.
     if (typeof window !== "undefined" && !audioRef.current) {
       const a = new Audio();
       a.preload = "auto";
@@ -93,6 +123,7 @@ export function usePlayback({ enabled, name }: UsePlaybackOptions): UsePlaybackR
     }
 
     if (skipSdk) {
+      appendLog({ level: "info", source: "init", message: "iOS detected — using preview engine" });
       setStatus("ready");
       setEngine("preview");
       return () => {
@@ -102,6 +133,7 @@ export function usePlayback({ enabled, name }: UsePlaybackOptions): UsePlaybackR
     }
 
     setStatus("loading");
+    appendLog({ level: "info", source: "init", message: "Initializing Spotify Web Playback SDK" });
 
     let stuckTimer: ReturnType<typeof setTimeout> | null = null;
     let sdkReady = false;
@@ -118,8 +150,13 @@ export function usePlayback({ enabled, name }: UsePlaybackOptions): UsePlaybackR
               .then((t) => {
                 tokenRef.current = t;
                 cb(t);
+                appendLog({ level: "info", source: "token", message: "Fresh access token loaded" });
               })
-              .catch((err) => setError(err.message));
+              .catch((err) => {
+                const msg = err instanceof Error ? err.message : String(err);
+                appendLog({ level: "error", source: "token", message: msg });
+                setError(msg);
+              });
           },
           volume: 0.7,
         });
@@ -131,11 +168,20 @@ export function usePlayback({ enabled, name }: UsePlaybackOptions): UsePlaybackR
           setDeviceId(device_id);
           setStatus("ready");
           setEngine("sdk");
+          appendLog({
+            level: "info",
+            source: "sdk",
+            message: `SDK ready (device ${device_id.slice(0, 8)}…)`,
+          });
         });
-        player.addListener("not_ready", () => {
+        player.addListener("not_ready", ({ device_id }) => {
           if (cancelled) return;
-          // Device went offline — try preview as backup but keep SDK around.
           setStatus("idle");
+          appendLog({
+            level: "warn",
+            source: "sdk",
+            message: `Device went offline (${device_id.slice(0, 8)}…)`,
+          });
         });
         for (const evt of [
           "initialization_error",
@@ -145,10 +191,8 @@ export function usePlayback({ enabled, name }: UsePlaybackOptions): UsePlaybackR
         ] as const) {
           player.addListener(evt, ({ message }) => {
             if (cancelled) return;
-            console.warn(`[playback] ${evt}: ${message}`);
-            // Only fall back to preview on hard error — never on timeout — so
-            // we don't burn the user's browser-autoplay grant trying to play
-            // when the SDK was still booting.
+            appendLog({ level: "error", source: "sdk", message: `${evt}: ${message}` });
+            setError(`${evt}: ${message}`);
             setEngine("preview");
             setStatus("ready");
           });
@@ -156,24 +200,31 @@ export function usePlayback({ enabled, name }: UsePlaybackOptions): UsePlaybackR
 
         const ok = await player.connect();
         if (!ok && !cancelled) {
+          appendLog({
+            level: "warn",
+            source: "sdk",
+            message: "player.connect() returned false — using preview engine",
+          });
           setEngine("preview");
           setStatus("ready");
         }
         playerRef.current = player;
 
-        // Long stuck-on-connecting safety net — if the SDK never fires
-        // "ready" after 12s, switch to preview engine so the round can play.
-        // The play call will need a fresh user gesture if autoplay is blocked,
-        // and the GameView already handles that via the tap-to-play button.
         stuckTimer = setTimeout(() => {
           if (cancelled || sdkReady) return;
-          console.warn("[playback] SDK stuck — falling back to preview engine");
+          appendLog({
+            level: "warn",
+            source: "sdk",
+            message: `SDK never reached ready in ${SDK_READY_TIMEOUT_MS}ms — falling back to preview`,
+          });
           setEngine("preview");
           setStatus("ready");
         }, SDK_READY_TIMEOUT_MS);
       } catch (err) {
         if (cancelled) return;
-        console.warn("[playback] SDK init failed", err);
+        const msg = err instanceof Error ? err.message : String(err);
+        appendLog({ level: "error", source: "init", message: msg });
+        setError(msg);
         setEngine("preview");
         setStatus("ready");
       }
@@ -186,11 +237,10 @@ export function usePlayback({ enabled, name }: UsePlaybackOptions): UsePlaybackR
       playerRef.current = null;
       audioRef.current?.pause();
     };
-  }, [enabled, name, skipSdk]);
+  }, [enabled, name, skipSdk, retryNonce, appendLog]);
 
   const play = useCallback(
     async (target: PlayTarget, positionMs = 0): Promise<boolean> => {
-      // Prefer SDK if it's actively the chosen engine and ready.
       if (engine === "sdk" && deviceId) {
         try {
           const token = tokenRef.current ?? (await getAccessToken());
@@ -206,39 +256,62 @@ export function usePlayback({ enabled, name }: UsePlaybackOptions): UsePlaybackR
               body: JSON.stringify({ uris: [target.uri], position_ms: positionMs }),
             },
           );
-          if (res.ok || res.status === 204) return true;
-          console.warn("[playback] SDK play failed", res.status, "— falling through to preview");
+          if (res.ok || res.status === 204) {
+            appendLog({ level: "info", source: "play", message: `SDK play → ${res.status}` });
+            setError(null);
+            return true;
+          }
+          const body = await res.text().catch(() => "");
+          appendLog({
+            level: "warn",
+            source: "play",
+            message: `SDK play failed ${res.status}${body ? `: ${body.slice(0, 200)}` : ""} — trying preview`,
+          });
+          if (res.status === 404) {
+            setError("Spotify device not registered yet. Trying preview clip…");
+          } else if (res.status === 403) {
+            setError("Spotify rejected playback (Premium required, region, or another device active).");
+          } else if (res.status === 401) {
+            setError("Spotify session expired. Sign in again.");
+          } else {
+            setError(`Spotify play returned ${res.status}.`);
+          }
         } catch (err) {
-          console.warn("[playback] SDK play error", err);
+          const msg = err instanceof Error ? err.message : String(err);
+          appendLog({ level: "warn", source: "play", message: `SDK play threw: ${msg}` });
         }
       }
 
-      // Preview fallback.
       const audio = audioRef.current;
-      if (!audio) return false;
+      if (!audio) {
+        appendLog({ level: "error", source: "preview", message: "No audio element available" });
+        return false;
+      }
       if (!target.previewUrl) {
-        setError("This track has no preview clip available.");
+        appendLog({ level: "warn", source: "preview", message: "Track has no preview URL" });
+        setError("This track has no preview clip available — host can skip.");
         return false;
       }
       try {
         audio.src = target.previewUrl;
-        // Snippets in the game start mid-track on the SDK; preview is its own
-        // 30s clip (Spotify-curated highlight), so we just play from start.
         audio.currentTime = 0;
         await audio.play();
+        appendLog({ level: "info", source: "preview", message: "Playing 30s preview" });
         setError(null);
         return true;
       } catch (err) {
-        // Autoplay-blocked: surface a clear error so the UI can show a tap-to-play.
-        setError(
-          err instanceof Error && err.name === "NotAllowedError"
-            ? "Browser blocked autoplay. Tap below to start audio."
-            : "Couldn't start audio.",
-        );
+        const isAutoplay = err instanceof Error && err.name === "NotAllowedError";
+        const msg = isAutoplay
+          ? "Browser blocked autoplay — tap to start audio."
+          : err instanceof Error
+            ? err.message
+            : String(err);
+        appendLog({ level: "warn", source: "preview", message: msg });
+        setError(msg);
         return false;
       }
     },
-    [engine, deviceId],
+    [engine, deviceId, appendLog],
   );
 
   const pause = useCallback(async () => {
@@ -252,5 +325,5 @@ export function usePlayback({ enabled, name }: UsePlaybackOptions): UsePlaybackR
     audioRef.current?.pause();
   }, []);
 
-  return { status, engine, deviceId, error, play, pause };
+  return { status, engine, deviceId, error, log, play, pause, retry };
 }

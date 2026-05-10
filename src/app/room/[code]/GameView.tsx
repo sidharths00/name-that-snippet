@@ -146,18 +146,30 @@ export function GameView({
       <div className="grid gap-5 sm:gap-6 lg:grid-cols-[1fr_280px]">
         <div className="flex flex-col gap-5 sm:gap-6">
           {inRound && (
-            <NowPlaying
-              durationMs={room.settings.snippetSeconds * 1000}
-              startedAt={round?.startedAt ?? null}
-              shouldPlay={shouldPlay}
-              isPremium={viewer.isPremium}
-              playbackStatus={playback.status}
-              playbackEngine={playback.engine}
-              playbackError={playback.error}
-              hasPreview={!!track?.previewUrl}
-              needsTap={needsTap}
-              onTap={tapToPlay}
-            />
+            <>
+              <NowPlaying
+                durationMs={room.settings.snippetSeconds * 1000}
+                startedAt={round?.startedAt ?? null}
+                shouldPlay={shouldPlay}
+                isPremium={viewer.isPremium}
+                playbackStatus={playback.status}
+                playbackEngine={playback.engine}
+                playbackError={playback.error}
+                hasPreview={!!track?.previewUrl}
+                needsTap={needsTap}
+                onTap={tapToPlay}
+              />
+              {shouldPlay && viewer.isPremium && (
+                <PlaybackDiagnostics
+                  status={playback.status}
+                  engine={playback.engine}
+                  deviceId={playback.deviceId}
+                  error={playback.error}
+                  log={playback.log}
+                  onRetry={playback.retry}
+                />
+              )}
+            </>
           )}
 
           {inResult && track && (
@@ -240,6 +252,99 @@ function RoundProgress({ current, total }: { current: number; total: number }) {
         style={{ width: `${Math.max(0, Math.min(100, ((current - 0.5) / total) * 100))}%` }}
       />
     </div>
+  );
+}
+
+function PlaybackDiagnostics({
+  status,
+  engine,
+  deviceId,
+  error,
+  log,
+  onRetry,
+}: {
+  status: string;
+  engine: "sdk" | "preview" | null;
+  deviceId: string | null;
+  error: string | null;
+  log: import("@/components/usePlayback").PlaybackLogEntry[];
+  onRetry: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  // Auto-open if there's an error so the user sees it without having to click.
+  const hasError = !!error || log.some((l) => l.level === "error");
+  const expanded = open || hasError;
+  return (
+    <details
+      open={expanded}
+      onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}
+      className="rounded-2xl border border-border bg-bg-elev/60 px-4 py-3 text-xs"
+    >
+      <summary className="flex cursor-pointer items-center justify-between gap-3 text-fg-muted">
+        <span className="flex items-center gap-2">
+          <span className="font-semibold uppercase tracking-wider">Playback</span>
+          <span
+            className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${
+              hasError
+                ? "bg-danger/15 text-danger"
+                : engine === "sdk"
+                  ? "bg-accent/15 text-accent"
+                  : engine === "preview"
+                    ? "bg-warn/15 text-warn"
+                    : "bg-bg-elev text-fg-muted"
+            }`}
+          >
+            {engine ?? "—"} · {status}
+          </span>
+        </span>
+        <span className="text-fg-muted/70">
+          {deviceId ? `device ${deviceId.slice(0, 6)}…` : "no device"}
+        </span>
+      </summary>
+      {error && (
+        <p className="mt-3 rounded-lg border border-danger/30 bg-danger/5 p-2 text-danger">
+          {error}
+        </p>
+      )}
+      {log.length > 0 && (
+        <ol className="mt-3 max-h-32 overflow-y-auto space-y-1 font-mono text-[11px] leading-snug">
+          {log
+            .slice()
+            .reverse()
+            .map((entry, i) => (
+              <li
+                key={`${entry.at}-${i}`}
+                className={
+                  entry.level === "error"
+                    ? "text-danger"
+                    : entry.level === "warn"
+                      ? "text-warn"
+                      : "text-fg-muted"
+                }
+              >
+                <span className="opacity-60">{entry.source}</span>{" "}
+                <span>{entry.message}</span>
+              </li>
+            ))}
+        </ol>
+      )}
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button
+          onClick={onRetry}
+          className="rounded-full border border-border bg-bg-elev px-3 py-1 text-[11px] font-semibold transition hover:border-fg-muted"
+        >
+          ↻ Retry connection
+        </button>
+        <a
+          href="https://open.spotify.com"
+          target="_blank"
+          rel="noreferrer"
+          className="rounded-full border border-border bg-bg-elev px-3 py-1 text-[11px] font-semibold transition hover:border-fg-muted"
+        >
+          Open Spotify (free up device)
+        </a>
+      </div>
+    </details>
   );
 }
 

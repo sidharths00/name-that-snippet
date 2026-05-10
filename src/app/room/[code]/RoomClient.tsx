@@ -7,7 +7,7 @@ import { Logo } from "@/components/Logo";
 import { Lobby } from "./Lobby";
 import { GameView } from "./GameView";
 import { FinalScoreboard } from "./FinalScoreboard";
-import { usePlayback, type PlaybackStatus, type PlaybackEngine } from "@/components/usePlayback";
+import { usePlayback, type PlaybackStatus, type PlaybackEngine, type PlaybackLogEntry } from "@/components/usePlayback";
 import type { PublicGameEvent, PublicRoom } from "@/lib/types";
 
 export interface Viewer {
@@ -20,10 +20,14 @@ export interface Viewer {
 interface PlaybackBridge {
   status: PlaybackStatus;
   engine: PlaybackEngine;
+  deviceId: string | null;
   error: string | null;
+  log: PlaybackLogEntry[];
   shouldPlay: boolean;
+  isPremium: boolean;
   play: (target: { uri: string; previewUrl: string | null }, positionMs?: number) => Promise<boolean>;
   pause: () => Promise<void>;
+  retry: () => void;
 }
 
 const RoomRefreshContext = createContext<() => Promise<void>>(async () => {});
@@ -66,12 +70,27 @@ export function RoomClient({
     () => ({
       status: playback.status,
       engine: playback.engine,
+      deviceId: playback.deviceId,
       error: playback.error,
+      log: playback.log,
       shouldPlay,
+      isPremium: viewer.isPremium,
       play: playback.play,
       pause: playback.pause,
+      retry: playback.retry,
     }),
-    [playback.status, playback.engine, playback.error, shouldPlay, playback.play, playback.pause],
+    [
+      playback.status,
+      playback.engine,
+      playback.deviceId,
+      playback.error,
+      playback.log,
+      shouldPlay,
+      viewer.isPremium,
+      playback.play,
+      playback.pause,
+      playback.retry,
+    ],
   );
 
   // Auto-join if the viewer isn't yet in the room (deep-linked via URL).
