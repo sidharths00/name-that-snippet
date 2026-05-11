@@ -1,9 +1,5 @@
 import type { Player, Track } from "./types";
 
-// Share of the pool reserved (when possible) for tracks owned by *all* players.
-// Falls below this if the full-intersection set is smaller than the share.
-const FULL_INTERSECTION_TARGET_RATIO = 0.6;
-
 function shuffle<T>(arr: T[]): T[] {
   const out = arr.slice();
   for (let i = out.length - 1; i > 0; i--) {
@@ -63,19 +59,11 @@ export function buildSongPool(
     buckets.get(c)!.push(t);
   }
 
-  // Step 1: Heavily prefer tracks owned by ALL players. Aim for ~60% of the
-  // pool from this tier if we have enough. With 3+ players this is the
-  // "everyone knows it" trivia sweet spot.
-  const fullTier = shuffle(buckets.get(n) ?? []);
-  const fullTarget = Math.ceil(rounds * FULL_INTERSECTION_TARGET_RATIO);
-  for (const t of fullTier) {
-    if (picked.size >= fullTarget) break;
-    picked.set(t.id, t);
-  }
-
-  // Step 2: Walk down the ownership tiers (n-1, n-2, ...) filling remaining
-  // slots. Higher overlap = more interesting to more players.
-  for (let count = n - 1; count >= 2; count--) {
+  // Step 1: Fill from the highest-overlap tier downward, taking everything
+  // from each tier before descending. The pool ends up as "shared as possible".
+  // For 2 players this means all shared tracks fill the pool first; solo
+  // tracks only appear if there aren't enough shared songs.
+  for (let count = n; count >= 2; count--) {
     if (picked.size >= rounds) break;
     const tier = shuffle(buckets.get(count) ?? []);
     for (const t of tier) {

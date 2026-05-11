@@ -69,7 +69,7 @@ describe("buildSongPool", () => {
     expect(pool.filter((t) => t.ownerIds.length === 2).length).toBe(1);
   });
 
-  test("prefers common (multi-owner) tracks when available", () => {
+  test("2 players with plenty of shared tracks: pool is 100% shared", () => {
     const a = player("A");
     const b = player("B");
     const lib = {
@@ -82,11 +82,34 @@ describe("buildSongPool", () => {
         ...Array.from({ length: 10 }, (_, i) => track(`uB${i}`, "B")),
       ],
     };
+    for (let trial = 0; trial < 10; trial++) {
+      const pool = buildSongPool([a, b], lib, 10, 0);
+      expect(pool.length).toBe(10);
+      // Every track should be 2-owner (both have it)
+      for (const t of pool) {
+        expect(t.ownerIds.length).toBe(2);
+      }
+    }
+  });
+
+  test("2 players with few shared tracks: fills shared first then solos", () => {
+    const a = player("A");
+    const b = player("B");
+    const lib = {
+      A: [
+        ...Array.from({ length: 3 }, (_, i) => track(`s${i}`, "A")),
+        ...Array.from({ length: 10 }, (_, i) => track(`uA${i}`, "A")),
+      ],
+      B: [
+        ...Array.from({ length: 3 }, (_, i) => track(`s${i}`, "B")),
+        ...Array.from({ length: 10 }, (_, i) => track(`uB${i}`, "B")),
+      ],
+    };
     const pool = buildSongPool([a, b], lib, 10, 0);
     expect(pool.length).toBe(10);
-    const common = pool.filter((t) => t.ownerIds.length === 2);
-    // With 20 common tracks available, the pool should lean heavily common.
-    expect(common.length).toBeGreaterThanOrEqual(8);
+    const shared = pool.filter((t) => t.ownerIds.length === 2);
+    // All 3 shared tracks consumed first
+    expect(shared.length).toBe(3);
   });
 
   test("merges ownerIds across players", () => {
