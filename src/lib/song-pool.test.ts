@@ -195,7 +195,10 @@ describe("buildSongPool", () => {
     }
   });
 
-  test("4 players: each gets at least floor(rounds/players) tracks", () => {
+  test("4 players with fully disjoint libraries: each player has at least 1 track", () => {
+    // Each player has 8 solo tracks, no overlap. With the new
+    // overlap-preferring algorithm, every player is still guaranteed at least
+    // one of their own tracks via the fairness top-up step.
     const players = ["A", "B", "C", "D"].map((id) => player(id));
     const lib: Record<string, ReturnType<typeof track>[]> = {};
     for (const p of players) {
@@ -205,8 +208,57 @@ describe("buildSongPool", () => {
     expect(pool.length).toBe(12);
     for (const p of players) {
       const owned = pool.filter((t) => t.ownerIds.includes(p.id));
-      expect(owned.length).toBeGreaterThanOrEqual(3); // floor(12/4)
+      expect(owned.length).toBeGreaterThanOrEqual(1);
     }
+  });
+
+  test("when full-intersection (all-N) tracks exist, they dominate the pool", () => {
+    const a = player("A");
+    const b = player("B");
+    const c = player("C");
+    // 10 tracks owned by all 3 players, 10 owned by only A+B, 10 owned by C alone
+    const all3 = Array.from({ length: 10 }, (_, i) => `all${i}`);
+    const ab = Array.from({ length: 10 }, (_, i) => `ab${i}`);
+    const cOnly = Array.from({ length: 10 }, (_, i) => `c${i}`);
+    const lib = {
+      A: [...all3.map((id) => track(id, "A")), ...ab.map((id) => track(id, "A"))],
+      B: [...all3.map((id) => track(id, "B")), ...ab.map((id) => track(id, "B"))],
+      C: [...all3.map((id) => track(id, "C")), ...cOnly.map((id) => track(id, "C"))],
+    };
+    let fullCount = 0;
+    for (let trial = 0; trial < 30; trial++) {
+      const pool = buildSongPool([a, b, c], lib, 10, 0);
+      fullCount += pool.filter((t) => t.ownerIds.length === 3).length;
+    }
+    // Across 30 trials × 10 rounds = 300 picks. With 60% target, expect ~180
+    // full-intersection picks. Allow generous floor for variance.
+    expect(fullCount).toBeGreaterThan(150);
+  });
+
+  test("prefers higher-overlap tracks over solo tracks in a 4-player game", () => {
+    const players = ["A", "B", "C", "D"].map((id) => player(id));
+    const lib: Record<string, ReturnType<typeof track>[]> = { A: [], B: [], C: [], D: [] };
+    // 5 tracks owned by all 4
+    for (let i = 0; i < 5; i++) {
+      for (const p of players) lib[p.id].push(track(`all${i}`, p.id));
+    }
+    // 5 tracks owned by 3 of 4 (everyone except D)
+    for (let i = 0; i < 5; i++) {
+      for (const id of ["A", "B", "C"]) lib[id].push(track(`abc${i}`, id));
+    }
+    // 5 solo tracks each
+    for (const p of players) {
+      for (let i = 0; i < 5; i++) lib[p.id].push(track(`${p.id}solo${i}`, p.id));
+    }
+    const pool = buildSongPool(players, lib, 10, 0);
+    const counts = pool.reduce((acc, t) => {
+      acc[t.ownerIds.length] = (acc[t.ownerIds.length] ?? 0) + 1;
+      return acc;
+    }, {} as Record<number, number>);
+    // Most of the pool should be 4-owner tracks
+    expect((counts[4] ?? 0)).toBeGreaterThanOrEqual(5);
+    // Solo tracks should be rare (only as fairness top-up if needed)
+    expect((counts[1] ?? 0)).toBeLessThanOrEqual(2);
   });
 
   test("if a player's library is empty, others fill in", () => {
